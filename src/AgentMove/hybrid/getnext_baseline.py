@@ -66,6 +66,11 @@ def build_model(config: Config):
 
 
 def load_frame(path: str) -> pd.DataFrame:
+    if not Path(path).is_file():
+        raise FileNotFoundError(
+            f"GETNext split not found: {path}. Run the dataset prepare step "
+            "or copy data/hybrid from the machine where preprocessing completed."
+        )
     frame = pd.read_csv(path)
     required = {"user_id", "POI_id", "POI_catid_code", "trajectory_id", "norm_in_day_time"}
     missing = required - set(frame.columns)
