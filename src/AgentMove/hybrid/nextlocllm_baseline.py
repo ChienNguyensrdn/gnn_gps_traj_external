@@ -127,11 +127,19 @@ def build_model(config, coords, semantics):
             super().__init__(); self.register_buffer("coords",torch.tensor(coords)); self.register_buffer("semantics",torch.tensor(semantics))
             self.semantic=torch.nn.Linear(config.semantic_dim,config.model_dim); self.spatial=torch.nn.Linear(2,config.model_dim); self.time=torch.nn.Linear(2,config.model_dim)
             layer=torch.nn.TransformerEncoderLayer(config.model_dim,config.heads,config.model_dim*4,config.dropout,batch_first=True,norm_first=True)
-            self.encoder=torch.nn.TransformerEncoder(layer,config.layers); self.head=torch.nn.Sequential(torch.nn.LayerNorm(config.model_dim),torch.nn.Linear(config.model_dim,config.model_dim),torch.nn.GELU(),torch.nn.Linear(config.model_dim,2),torch.nn.Sigmoid())
+            self.encoder=torch.nn.TransformerEncoder(layer,config.layers)
+            self.query_norm=torch.nn.LayerNorm(config.model_dim); self.candidate_norm=torch.nn.LayerNorm(config.model_dim)
+            self.logit_scale=torch.nn.Parameter(torch.tensor(math.log(10.0)))
+            self.head=torch.nn.Sequential(torch.nn.LayerNorm(config.model_dim),torch.nn.Linear(config.model_dim,config.model_dim),torch.nn.GELU(),torch.nn.Linear(config.model_dim,2),torch.nn.Sigmoid())
         def forward(self,poi,times,lengths):
             angle=times*2*math.pi; x=self.semantic(self.semantics[poi])+self.spatial(self.coords[poi])+self.time(torch.stack((torch.sin(angle),torch.cos(angle)),-1))
             pos=torch.arange(poi.shape[1],device=poi.device)[None,:]; x=self.encoder(x,src_key_padding_mask=pos>=lengths[:,None])
-            return self.head(x[torch.arange(x.shape[0],device=x.device),lengths-1])
+            hidden=x[torch.arange(x.shape[0],device=x.device),lengths-1]
+            candidate_keys=self.candidate_norm(self.semantic(self.semantics)+self.spatial(self.coords))
+            query=torch.nn.functional.normalize(self.query_norm(hidden),dim=-1)
+            candidate_keys=torch.nn.functional.normalize(candidate_keys,dim=-1)
+            logits=query@candidate_keys.T*self.logit_scale.exp().clamp(max=100.)
+            return self.head(hidden),logits
     return Model()
 
 
@@ -149,7 +157,9 @@ def evaluate(model,rows,candidate_coords,args,device):
     torch=torch_module(); model.eval(); candidates=torch.tensor(candidate_coords,device=device); n=h1=h5=h10=0; rr=0.
     with torch.no_grad():
         for poi,times,lengths,labels in batches(rows,args.batch_size,False,args.seed,device):
-            predicted=model(poi,times,lengths); distances=torch.cdist(predicted,candidates); order=torch.argsort(distances,dim=1)
+            predicted,logits=model(poi,times,lengths); distances=torch.cdist(predicted,candidates)
+            retrieval_scores=logits-args.distance_weight*distances
+            order=torch.argsort(retrieval_scores,dim=1,descending=True)
             ranks=(order==labels[:,None]).nonzero()[:,1]+1; n+=len(labels); h1+=int((ranks<=1).sum()); h5+=int((ranks<=5).sum()); h10+=int((ranks<=10).sum()); rr+=float((1/ranks.float()).sum())
     return {"count":n,"acc@1":h1/n,"acc@5":h5/n,"acc@10":h10/n,"mrr":rr/n}
 
@@ -169,11 +179,15 @@ def run(args):
     for epoch in range(1,args.epochs+1):
         model.train(); losses=[]
         for poi,times,lengths,labels in batches(train_rows,args.batch_size,True,args.seed+epoch,device):
-            optimizer.zero_grad(set_to_none=True); loss=torch.nn.functional.smooth_l1_loss(model(poi,times,lengths),model.coords[labels]); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),1.); optimizer.step(); losses.append(float(loss.detach()))
+            optimizer.zero_grad(set_to_none=True); predicted,logits=model(poi,times,lengths)
+            coordinate_loss=torch.nn.functional.smooth_l1_loss(predicted,model.coords[labels])
+            ranking_loss=torch.nn.functional.cross_entropy(logits,labels,label_smoothing=args.label_smoothing)
+            loss=args.ranking_loss_weight*ranking_loss+args.coordinate_loss_weight*coordinate_loss
+            loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),1.); optimizer.step(); losses.append(float(loss.detach()))
         scores=evaluate(model,val_rows,coords,args,device); scores.update(epoch=epoch,train_loss=float(np.mean(losses))); history.append(scores); print(json.dumps(scores),flush=True)
         score=scores["acc@1"]+scores["acc@10"]
         if score>best: best=score; state={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
-    model.load_state_dict(state); result=evaluate(model,test_rows,coords,args,device); result.update(method="NextLocLLM reproduction",dataset=args.dataset,city=args.city,seed=args.seed,device=device_name,test_limit=args.test_limit,candidate_count=count,embedding_model=args.embedding_model,duration="unavailable",protocol="coordinate prediction plus full-space nearest-POI retrieval",validation_history=history)
+    model.load_state_dict(state); result=evaluate(model,test_rows,coords,args,device); result.update(method="NextLocLLM reproduction (ranking-enhanced)",dataset=args.dataset,city=args.city,seed=args.seed,device=device_name,test_limit=args.test_limit,candidate_count=count,embedding_model=args.embedding_model,duration="unavailable",protocol="coordinate prediction plus semantic full-space ranking and nearest-POI retrieval",ranking_loss_weight=args.ranking_loss_weight,coordinate_loss_weight=args.coordinate_loss_weight,distance_weight=args.distance_weight,validation_history=history)
     output=Path(args.output); output.mkdir(parents=True,exist_ok=True); torch.save({"model_state":state,"config":asdict(config),"coordinate_min":low,"coordinate_scale":scale},output/"best.pt"); (output/"metrics.json").write_text(json.dumps(result,indent=2)+"\n"); print(f"metrics={output/'metrics.json'}\n{json.dumps(result,indent=2)}")
 
 
@@ -186,7 +200,7 @@ def aggregate(args):
 def parser():
     root=argparse.ArgumentParser(); sub=root.add_subparsers(dest="command",required=True); p=sub.add_parser("run")
     for name in ("train_csv","validation_csv","test_csv","candidate_ids","embedding_cache","output","dataset","city"): p.add_argument("--"+name.replace("_","-"),required=True)
-    p.add_argument("--embedding-model",default="qwen2:7b"); p.add_argument("--ollama-base-url",default="http://127.0.0.1:11434/v1"); p.add_argument("--epochs",type=int,default=10); p.add_argument("--batch-size",type=int,default=32); p.add_argument("--learning-rate",type=float,default=1e-3); p.add_argument("--seed",type=int,default=42); p.add_argument("--model-dim",type=int,default=128); p.add_argument("--layers",type=int,default=2); p.add_argument("--heads",type=int,default=4); p.add_argument("--dropout",type=float,default=.2); p.add_argument("--device",default="auto"); p.add_argument("--train-limit",type=int,default=0); p.add_argument("--validation-limit",type=int,default=0); p.add_argument("--test-limit",type=int,default=200)
+    p.add_argument("--embedding-model",default="qwen2:7b"); p.add_argument("--ollama-base-url",default="http://127.0.0.1:11434/v1"); p.add_argument("--epochs",type=int,default=10); p.add_argument("--batch-size",type=int,default=32); p.add_argument("--learning-rate",type=float,default=1e-3); p.add_argument("--seed",type=int,default=42); p.add_argument("--model-dim",type=int,default=128); p.add_argument("--layers",type=int,default=2); p.add_argument("--heads",type=int,default=4); p.add_argument("--dropout",type=float,default=.2); p.add_argument("--device",default="auto"); p.add_argument("--train-limit",type=int,default=0); p.add_argument("--validation-limit",type=int,default=0); p.add_argument("--test-limit",type=int,default=200); p.add_argument("--ranking-loss-weight",type=float,default=1.0); p.add_argument("--coordinate-loss-weight",type=float,default=0.25); p.add_argument("--distance-weight",type=float,default=1.0); p.add_argument("--label-smoothing",type=float,default=0.05)
     a=sub.add_parser("aggregate"); a.add_argument("--root",required=True); a.add_argument("--cities",nargs="+",required=True); a.add_argument("--output",required=True); return root
 
 
