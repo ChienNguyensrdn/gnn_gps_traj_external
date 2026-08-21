@@ -36,6 +36,9 @@ OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2:7b}"
 NOMINATIM_URL="${NOMINATIM_URL:-http://127.0.0.1:8080}"
 NOMINATIM_DELAY="${NOMINATIM_DELAY:-0}"
 OSM_MIN_COVERAGE="${OSM_MIN_COVERAGE:-0.90}"
+CGM_EPOCHS="${CGM_EPOCHS:-10}"
+CGM_BATCH_SIZE="${CGM_BATCH_SIZE:-64}"
+CGM_DEVICE="${CGM_DEVICE:-auto}"
 NORMALIZED_ROOT="${NORMALIZED_ROOT:-data/input_trajectories}"
 ENRICHED_ROOT="${ENRICHED_ROOT:-data/input_trajectories_clean}"
 OSM_CACHE_ROOT="${OSM_CACHE_ROOT:-data/osm_cache/tist2015}"
@@ -48,6 +51,7 @@ usage() {
 Usage:
   $0 audit
   $0 enrich <city|pending>
+  $0 prepare-cgm <city|pending>
   $0 run <city|pending>
   $0 aggregate
   $0 city <city>        # enrich, coverage gate, then run one city
@@ -55,6 +59,7 @@ Usage:
 Environment:
   NOMINATIM_URL=http://127.0.0.1:8080   local Nominatim (required)
   QUERY_LIMIT=200 OLLAMA_MODEL=qwen2:7b
+  CGM_EPOCHS=10 CGM_BATCH_SIZE=64 CGM_DEVICE=auto
 
 Cities: ${TIST2015_CITIES[*]}
 Ollama is always http://127.0.0.1:11434/v1.
@@ -104,6 +109,55 @@ enrich_city() {
     --base-url "$NOMINATIM_URL" --delay-seconds "$NOMINATIM_DELAY"
   "$PYTHON_BIN" -m hybrid.refresh_osm_metadata --csv "$output" --metadata "$metadata"
   echo "[$city] coverage=$(coverage "$city") threshold=$OSM_MIN_COVERAGE"
+}
+
+prepare_cgm_city() {
+  local city="$1" base neural split
+  require_city "$city"
+  base="$DATA_ROOT/$city"
+  neural="$base/neural_cgm"
+  for file in "$PYTHON_BIN" "$base/getnext/train.csv" "$base/getnext/val.csv" \
+      "$base/getnext/test.csv" "$base/candidate_ids.json" \
+      "$base/validation.jsonl" "$base/test.jsonl" \
+      "$base/validation_metadata.jsonl" "$base/test_metadata.jsonl"; do
+    [[ -f "$file" ]] || { echo "Missing required file: $file" >&2; exit 2; }
+  done
+  mkdir -p "$neural"
+  if [[ ! -f "$neural/best.pt" ]]; then
+    echo "[$city] training Neural-CGM epochs=$CGM_EPOCHS device=$CGM_DEVICE"
+    "$PYTHON_BIN" -m hybrid.neural_cgm train \
+      --train-csv "$base/getnext/train.csv" \
+      --validation-csv "$base/getnext/val.csv" \
+      --candidate-ids "$base/candidate_ids.json" \
+      --output "$neural/best.pt" \
+      --epochs "$CGM_EPOCHS" --batch-size "$CGM_BATCH_SIZE" --device "$CGM_DEVICE"
+  else
+    echo "[$city] reusing checkpoint: $neural/best.pt"
+  fi
+  for split in validation test; do
+    if [[ ! -f "$neural/${split}_logits.npy" ]]; then
+      echo "[$city] exporting $split logits"
+      "$PYTHON_BIN" -m hybrid.neural_cgm export \
+        --checkpoint "$neural/best.pt" \
+        --input "$base/${split}.jsonl" \
+        --getnext-csv "$base/getnext/train.csv" "$base/getnext/val.csv" "$base/getnext/test.csv" \
+        --output "$neural/${split}_logits.npy"
+    fi
+    "$PYTHON_BIN" -m hybrid.cgm_adapter \
+      --logits "$neural/${split}_logits.npy" \
+      --metadata "$base/${split}_metadata.jsonl" \
+      --candidate-ids "$base/candidate_ids.json" \
+      --candidate-metadata "$base/candidate_metadata.json" \
+      --output "$neural/${split}.jsonl"
+  done
+  echo "[$city] Neural-CGM ready: $neural"
+}
+
+pending_prepare_cgm() {
+  local city
+  for city in "${TIST2015_CITIES[@]}"; do
+    [[ -f "$DATA_ROOT/$city/neural_cgm/best.pt" ]] || prepare_cgm_city "$city"
+  done
 }
 
 run_city() {
@@ -158,6 +212,10 @@ case "$command" in
   enrich)
     [[ -n "$target" ]] || { usage; exit 2; }
     [[ "$target" == pending ]] && pending_enrich || enrich_city "$target"
+    ;;
+  prepare-cgm)
+    [[ -n "$target" ]] || { usage; exit 2; }
+    [[ "$target" == pending ]] && pending_prepare_cgm || prepare_cgm_city "$target"
     ;;
   run)
     [[ -n "$target" ]] || { usage; exit 2; }
