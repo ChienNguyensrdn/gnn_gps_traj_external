@@ -48,6 +48,34 @@ mkdir -p "$LOG_DIR"
 
 raw_files=(dataset_TIST2015_Checkins.txt dataset_TIST2015_POIs.txt dataset_TIST2015_Cities.txt)
 
+require_raw_data() {
+  local file missing=0
+  for file in "${raw_files[@]}"; do
+    [[ -f "$RAW_DIR/$file" ]] || { echo "Missing raw dataset: $RAW_DIR/$file" >&2; missing=1; }
+  done
+  if [[ "$missing" -ne 0 ]]; then
+    echo "Run first: ./scripts/tist2015_pipeline.sh download" >&2
+    return 2
+  fi
+}
+
+require_prepared_data() {
+  local city file missing=0
+  for city in "${TIST2015_CITIES[@]}"; do
+    for file in getnext/train.csv getnext/val.csv getnext/test.csv candidate_ids.json validation.jsonl test.jsonl; do
+      if [[ ! -f "data/hybrid/TIST2015/$city/$file" ]]; then
+        echo "Missing prepared input: data/hybrid/TIST2015/$city/$file" >&2
+        missing=1
+        break
+      fi
+    done
+  done
+  if [[ "$missing" -ne 0 ]]; then
+    echo "Run first: ./scripts/tist2015_pipeline.sh prepare" >&2
+    return 2
+  fi
+}
+
 audit() {
   local file city missing=0 status metrics
   echo "TIST2015 protocol audit model=$OLLAMA_MODEL endpoint=http://127.0.0.1:11434/v1"
@@ -74,12 +102,15 @@ download() {
 
 prepare() {
   tist2015_require_python "$PYTHON_BIN"
+  require_raw_data
   PYTHON_BIN="$PYTHON_BIN" ./scripts/prepare_tist2015_hybrid.sh
 }
 
 train() {
   local city base output
   tist2015_require_python "$PYTHON_BIN"
+  require_raw_data
+  require_prepared_data
   for city in "${TIST2015_CITIES[@]}"; do
     base="data/hybrid/TIST2015/$city"; output="$base/neural_cgm/best.pt"
     [[ -f "$output" && "${FORCE_TRAIN:-0}" != "1" ]] && { echo "skip trained $city"; continue; }

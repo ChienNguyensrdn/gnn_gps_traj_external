@@ -45,4 +45,7 @@ print(json.dumps({
 PY
 
 echo "Environment ready: $(pwd)/.venv/bin/python"
-echo "Next: ./scripts/tist2015_pipeline.sh audit"
+echo "Next commands:"
+echo "  ./scripts/tist2015_pipeline.sh download"
+echo "  ./scripts/tist2015_pipeline.sh prepare"
+echo "  ./scripts/tist2015_pipeline.sh train"
