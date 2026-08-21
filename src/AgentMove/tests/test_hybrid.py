@@ -20,6 +20,10 @@ from hybrid.enrich_osm import normalize_address
 from hybrid.schemas import Candidate, Prediction, Query
 from hybrid.llm_only import _parse as parse_llm_only
 from hybrid.tist2015_table2_aggregate import aggregate as aggregate_tist2015_table2
+from hybrid.dual_evolution import corrupt_examples, distillation_losses
+from hybrid.neural_cgm import ModelConfig, build_model
+from hybrid.selective_llm import SelectiveLLMPolicy
+from hybrid.aggregate_runs import aggregate as aggregate_runs
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -60,6 +64,42 @@ class CalibrationTests(unittest.TestCase):
         ratios = calibrator.predict_likelihood_ratio([0.2, 0.8])
         self.assertLess(ratios[0], 1.0)
         self.assertGreater(ratios[1], 1.0)
+
+
+class EvolutionAndSelectiveTests(unittest.TestCase):
+    def test_order_corruption_preserves_targets_and_alignment(self):
+        example = [([1, 2, 3], [10, 20, 30], 4, 31, 9)]
+        reversed_rows = corrupt_examples(example, "reverse", 42)
+        self.assertEqual(reversed_rows[0], ([3, 2, 1], [30, 20, 10], 4, 31, 9))
+        self.assertEqual(corrupt_examples(example, "correct", 42), example)
+
+    def test_selective_llm_entropy_and_margin(self):
+        policy = SelectiveLLMPolicy(entropy_threshold=0.5, margin_threshold=0.2)
+        self.assertFalse(policy.decide([0.9, 0.1])["call_llm"])
+        self.assertTrue(policy.decide([0.51, 0.49])["call_llm"])
+
+    def test_neural_cgm_exposes_depth_and_temporal_states(self):
+        import torch
+        model = build_model(ModelConfig(num_pois=5, num_users=2, hidden_dim=8))
+        output = model(
+            torch.tensor([[1, 2, 0], [2, 3, 4]]), torch.tensor([[1, 2, 0], [3, 4, 5]]),
+            torch.tensor([2, 3]), torch.tensor([0, 1]), torch.tensor([3, 6]), return_states=True,
+        )
+        self.assertEqual(tuple(output["logits"].shape), (2, 5))
+        self.assertEqual(len(output["depth_states"]), 2)
+        self.assertEqual(tuple(output["temporal_states"].shape), (2, 3, 8))
+        projections = torch.nn.ModuleList([torch.nn.Identity(), torch.nn.Identity()])
+        losses = distillation_losses(output, output, torch.tensor([1, 2]), projections, 2.0)
+        self.assertAlmostEqual(float(losses["kd"].detach()), 0.0, places=5)
+        self.assertAlmostEqual(float(losses["temporal"].detach()), 0.0, places=5)
+
+    def test_run_aggregator_indexes_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); target = root / "city" / "full"; target.mkdir(parents=True)
+            (target / "metrics.json").write_text(json.dumps({"acc@1": 0.5}))
+            payload = aggregate_runs(root)
+            self.assertEqual(payload["completed_metric_files"], 1)
+            self.assertEqual(payload["runs"][0]["metrics"]["acc@1"], 0.5)
 
 
 class FusionAndMetricTests(unittest.TestCase):

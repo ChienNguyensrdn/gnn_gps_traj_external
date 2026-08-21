@@ -45,14 +45,27 @@ def build_model(config: ModelConfig):
                 torch.nn.Linear(config.hidden_dim, config.num_pois),
             )
 
-        def forward(self, poi_ids, time_slots, lengths, user_ids, target_slots):
+        def forward(self, poi_ids, time_slots, lengths, user_ids, target_slots, return_states=False):
+            embedded = torch.cat([self.poi(poi_ids), self.time(time_slots)], dim=-1)
             packed = torch.nn.utils.rnn.pack_padded_sequence(
-                torch.cat([self.poi(poi_ids), self.time(time_slots)], dim=-1),
+                embedded,
                 lengths.cpu(), batch_first=True, enforce_sorted=False,
             )
-            _, hidden = self.gru(packed)
+            packed_output, hidden = self.gru(packed)
             features = torch.cat([hidden[-1], self.user(user_ids), self.time(target_slots)], dim=-1)
-            return self.head(features)
+            head_state = self.head[1](self.head[0](features))
+            logits = self.head[2](head_state)
+            if not return_states:
+                return logits
+            temporal, _ = torch.nn.utils.rnn.pad_packed_sequence(
+                packed_output, batch_first=True, total_length=poi_ids.shape[1]
+            )
+            return {
+                "logits": logits,
+                "depth_states": [hidden[-1], head_state],
+                "temporal_states": temporal,
+                "lengths": lengths,
+            }
 
     return NeuralCGM()
 
