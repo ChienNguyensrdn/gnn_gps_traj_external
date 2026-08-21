@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tist2015_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tist2015_common.sh"
 
 # Resumable AgentMove-faithful LLM-ZS baseline for TIST2015 Table II.
 # Usage:

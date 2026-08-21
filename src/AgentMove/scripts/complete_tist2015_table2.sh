@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tist2015_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tist2015_common.sh"
 
 TARGET="${1:-audit}"
 QUERY_LIMIT="${QUERY_LIMIT:-200}"
