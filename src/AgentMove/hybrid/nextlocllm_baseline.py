@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse, hashlib, json, math, random, urllib.request
+from urllib.error import HTTPError
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -26,18 +27,50 @@ def load_csv(path):
 
 
 def ollama_embed(texts, model, base_url, batch_size=32):
-    vectors = []
     endpoint = base_url.rstrip("/")
     if endpoint.endswith("/v1"): endpoint = endpoint[:-3]
-    for start in range(0, len(texts), batch_size):
-        payload = json.dumps({"model": model, "input": texts[start:start+batch_size]}).encode()
-        request = urllib.request.Request(endpoint + "/api/embed", data=payload, headers={"Content-Type": "application/json"})
+
+    def post(url, payload):
+        request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=300) as response:
+            return json.load(response)
+
+    vectors = []
+    try:
+        for start in range(0, len(texts), batch_size):
+            body = post(endpoint + "/api/embed", {"model": model, "input": texts[start:start+batch_size]})
+            vectors.extend(body.get("embeddings", []))
+        if len(vectors) != len(texts):
+            raise ValueError("batch endpoint returned an incomplete embedding list")
+        api = "api/embed"
+    except (HTTPError, ValueError) as modern_error:
+        # Ollama before 0.1.26 exposes only the singular legacy endpoint.
+        print(f"embedding_api=/api/embed unavailable ({modern_error}); falling back to /api/embeddings", flush=True)
+        vectors = []
         try:
-            with urllib.request.urlopen(request, timeout=300) as response: body = json.load(response)
-        except Exception as exc:
-            raise RuntimeError(f"Ollama embedding failed at {endpoint}/api/embed for model {model}: {exc}") from exc
-        vectors.extend(body.get("embeddings", []))
+            for text in texts:
+                body = post(endpoint + "/api/embeddings", {"model": model, "prompt": text})
+                vector = body.get("embedding")
+                if not vector: raise ValueError("legacy endpoint returned no embedding")
+                vectors.append(vector)
+            api = "api/embeddings"
+        except (HTTPError, ValueError) as legacy_error:
+            print(f"embedding_api=/api/embeddings unavailable ({legacy_error}); falling back to /v1/embeddings", flush=True)
+            vectors = []
+            try:
+                for start in range(0, len(texts), batch_size):
+                    body = post(endpoint + "/v1/embeddings", {"model": model, "input": texts[start:start+batch_size]})
+                    data = sorted(body.get("data", []), key=lambda row: row.get("index", 0))
+                    vectors.extend(row["embedding"] for row in data)
+                api = "v1/embeddings"
+            except Exception as openai_error:
+                raise RuntimeError(
+                    f"No supported Ollama embedding endpoint at {endpoint} for model {model}; "
+                    f"modern={modern_error}; legacy={legacy_error}; openai={openai_error}. "
+                    "Install an embedding-capable Ollama model if qwen2:7b is rejected."
+                ) from openai_error
     if len(vectors) != len(texts): raise ValueError(f"Expected {len(texts)} embeddings, received {len(vectors)}")
+    print(f"embedding_api={api} vectors={len(vectors)}", flush=True)
     array = np.asarray(vectors, dtype=np.float32)
     array /= np.maximum(np.linalg.norm(array, axis=1, keepdims=True), 1e-8)
     return array
