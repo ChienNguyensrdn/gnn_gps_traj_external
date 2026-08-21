@@ -1,7 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tist2015_common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON="$SCRIPT_DIR/lib/tist2015_common.sh"
+if [[ -f "$COMMON" ]]; then
+  # shellcheck source=lib/tist2015_common.sh
+  source "$COMMON"
+else
+  # Keep this runner portable when only the experiment scripts are copied to
+  # another machine/repository.
+  readonly TIST2015_CITIES=(
+    Tokyo Nairobi NewYork Sydney CapeTown Paris
+    Beijing Mumbai SanFrancisco London SaoPaulo Moscow
+  )
+  tist2015_agentmove_root() { cd "$SCRIPT_DIR/.." && pwd; }
+  tist2015_is_city() {
+    local requested="$1" city
+    for city in "${TIST2015_CITIES[@]}"; do
+      [[ "$city" == "$requested" ]] && return 0
+    done
+    return 1
+  }
+  tist2015_model_slug() {
+    local slug="${1//\//-}"
+    printf '%s\n' "${slug//:/-}"
+  }
+fi
 
 ROOT="$(tist2015_agentmove_root)"
 cd "$ROOT"
