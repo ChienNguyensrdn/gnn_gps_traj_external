@@ -12,9 +12,12 @@ fi
 if [[ "$(uname -s)" == "Darwin" && -d /Applications/Ollama.app ]]; then
   echo "Opening /Applications/Ollama.app ..."
   open -a Ollama
+elif command -v systemctl >/dev/null && systemctl cat ollama.service >/dev/null 2>&1; then
+  echo "Starting the system Ollama service..."
+  sudo systemctl start ollama
 else
   command -v ollama >/dev/null || { echo "ollama command not found" >&2; exit 1; }
-  echo "Starting ollama serve; log: $LOG_FILE"
+  echo "No systemd Ollama unit found; starting a user Ollama server; log: $LOG_FILE"
   nohup ollama serve >"$LOG_FILE" 2>&1 &
 fi
 
@@ -27,5 +30,11 @@ for _ in {1..30}; do
   sleep 1
 done
 
-echo "Ollama did not become ready. Check $LOG_FILE or open Ollama.app manually." >&2
+echo "Ollama did not become ready." >&2
+if command -v systemctl >/dev/null && systemctl cat ollama.service >/dev/null 2>&1; then
+  echo "Check: sudo systemctl status ollama --no-pager" >&2
+  echo "Check: sudo journalctl -u ollama -n 100 --no-pager" >&2
+else
+  echo "Check $LOG_FILE or open Ollama.app manually." >&2
+fi
 exit 1

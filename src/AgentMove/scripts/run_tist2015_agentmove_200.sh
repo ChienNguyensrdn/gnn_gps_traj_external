@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tist2015_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tist2015_common.sh"
 
 TARGET="${1:-audit}"
 QUERY_LIMIT="${QUERY_LIMIT:-200}"
@@ -12,7 +12,7 @@ ROOT="$(tist2015_agentmove_root)"
 cd "$ROOT"
 
 tist2015_require_positive_integer QUERY_LIMIT "$QUERY_LIMIT"
-tist2015_require_python "$PYTHON_BIN"
+[[ -x "$PYTHON_BIN" ]] || { echo "Missing Python environment: $PYTHON_BIN" >&2; exit 2; }
 export OLLAMA_BASE_URL="http://127.0.0.1:11434/v1"
 export OLLAMA_API_KEY="${OLLAMA_API_KEY:-ollama}"
 export nominatim_deploy_server_address="${nominatim_deploy_server_address:-127.0.0.1:18081}"

@@ -1,8 +1,36 @@
-from tqdm import tqdm
 import os
 from pathlib import Path
 import zipfile
 import fcntl
+
+
+class _PlainProgress:
+    """Minimal tqdm-compatible fallback; dataset download must not require UI packages."""
+
+    def __init__(self, total=None, initial=0, **_kwargs):
+        self.total = total
+        self.current = initial
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        if self.total:
+            print(f"Downloaded {self.current}/{self.total} bytes")
+        else:
+            print(f"Downloaded {self.current} bytes")
+
+    def update(self, amount):
+        self.current += amount
+
+
+def _progress_bar(**kwargs):
+    try:
+        from tqdm import tqdm
+        return tqdm(**kwargs)
+    except ImportError:
+        print("tqdm is unavailable in this Python environment; continuing without a progress bar.")
+        return _PlainProgress(**kwargs)
 
 def downlad_model(model_name="google/gemma-2-2b-it", model_path="/you_local_path/gemma-2-2b-it/", download_tool="modelscope"):
     DOWNLOAD_TOOL = download_tool
@@ -89,7 +117,7 @@ def download_data(data_name="www19", use_proxy=True):
                     downloaded = 0
                 remaining = int(response.headers.get("content-length", 0))
                 total = downloaded + remaining if remaining else None
-                with archive.open("ab" if resumed else "wb") as handle, tqdm(
+                with archive.open("ab" if resumed else "wb") as handle, _progress_bar(
                     total=total, initial=downloaded, unit="B", unit_scale=True, unit_divisor=1024
                 ) as progress_bar:
                     for chunk in response.iter_content(chunk_size=1024 * 1024):

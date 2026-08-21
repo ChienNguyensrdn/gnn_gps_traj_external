@@ -136,6 +136,7 @@ train() {
 run_all() {
   tist2015_require_python "$PYTHON_BIN"
   ./scripts/start_ollama.sh
+  OLLAMA_BASE_URL="http://127.0.0.1:11434/v1" ./scripts/test_ollama.sh "$OLLAMA_MODEL"
   local city
   for city in ${CITIES:-${TIST2015_CITIES[*]}}; do
     tist2015_is_city "$city" || { echo "Invalid city: $city" >&2; exit 2; }

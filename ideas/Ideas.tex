@@ -1,0 +1,1917 @@
+\documentclass[11pt,a4paper]{article}
+
+% ============================================================
+% PACKAGES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{geometry}
+
+\usetikzlibrary{
+	arrows.meta,
+	positioning,
+	shapes.geometric,
+	fit,
+	calc
+}
+
+\geometry{
+	left=2.5cm,
+	right=2.5cm,
+	top=2.5cm,
+	bottom=2.5cm
+}
+
+% ============================================================
+% DOCUMENT
+% ============================================================
+
+\title{
+	\textbf{
+		BeliefMove: Bayesian Belief-Augmented Large Language Model Agents
+		for Uncertainty-Aware Next GPS Point Prediction
+	}
+}
+
+\author{}
+\date{}
+
+\begin{document}
+	
+	\maketitle
+	
+	% ============================================================
+	\begin{abstract}
+		
+		Dự đoán điểm GPS kế tiếp là một bài toán quan trọng trong khai phá
+		trajectory, phân tích hành vi di chuyển và hệ thống giao thông thông minh.
+		Các mô hình học sâu truyền thống có khả năng khai thác phụ thuộc
+		không--thời gian nhưng thường gặp khó khăn khi trajectory thưa, nhiễu hoặc
+		có nhiều hướng di chuyển khả dĩ. Gần đây, Large Language Models, LLMs,
+		và các mô hình tác tử dựa trên LLM mở ra một hướng tiếp cận mới cho bài
+		toán dự đoán vị trí thông qua khả năng suy luận ngữ nghĩa, khai thác tri
+		thức và mô hình hóa ý định di chuyển. Tuy nhiên, LLM thường đưa ra một
+		kết quả dự đoán duy nhất và chưa biểu diễn một cách có cấu trúc sự bất định
+		giữa nhiều giả thuyết di chuyển.
+		
+		Bài nghiên cứu này đề xuất \textbf{BeliefMove}, một framework kết hợp
+		LLM Agent với Bayesian Belief Network, BBN, cho dự đoán điểm GPS kế tiếp.
+		Thay vì yêu cầu LLM trực tiếp dự đoán tọa độ kế tiếp, BeliefMove sử dụng
+		LLM Agent để phân tích trajectory, suy luận ý định di chuyển và sinh ra
+		một tập các giả thuyết về hướng hoặc tuyến đường tiếp theo. BBN sau đó
+		chuyển các giả thuyết này thành một trạng thái belief xác suất và cập nhật
+		trạng thái đó khi các quan sát GPS mới xuất hiện. Một cơ chế adaptive
+		reasoning được đề xuất để cho phép Agent quyết định khi nào cần thực hiện
+		thêm suy luận dựa trên entropy của belief state và mức độ bất đồng giữa
+		LLM và BBN. Framework này hướng tới đồng thời cải thiện độ chính xác,
+		khả năng chịu nhiễu, khả năng hiệu chỉnh xác suất và hiệu quả suy luận.
+		Nghiên cứu được đánh giá trên nhiều tập dữ liệu GPS trajectory với các
+		thí nghiệm về dự đoán điểm kế tiếp, dự đoán nhiều bước, dữ liệu thưa,
+		nhiễu GPS, tổng quát hóa giữa các thành phố và calibration của độ tin cậy.
+		
+	\end{abstract}
+	
+	% ============================================================
+	\section{Giới thiệu}
+	
+	GPS trajectory cung cấp một nguồn dữ liệu quan trọng để nghiên cứu hành
+	vi di chuyển của con người và phương tiện. Một trajectory có thể được
+	biểu diễn dưới dạng chuỗi các quan sát:
+	
+	\begin{equation}
+		\mathcal{T}_{1:t}
+		=
+		\left\{
+		p_1,p_2,\ldots,p_t
+		\right\},
+	\end{equation}
+	
+	trong đó mỗi điểm GPS được biểu diễn bởi:
+	
+	\begin{equation}
+		p_i =
+		(lat_i,lon_i,time_i).
+	\end{equation}
+	
+	Một bài toán cơ bản trong trajectory mining là dự đoán điểm GPS tiếp theo:
+	
+	\begin{equation}
+		p_{t+1}
+		=
+		(lat_{t+1},lon_{t+1}),
+	\end{equation}
+	
+	dựa trên lịch sử trajectory:
+	
+	\begin{equation}
+		P
+		\left(
+		p_{t+1}
+		\mid
+		p_1,\ldots,p_t
+		\right).
+	\end{equation}
+	
+	Các mô hình truyền thống như Markov model, Hidden Markov Model,
+	Recurrent Neural Network, LSTM và Transformer đã được sử dụng rộng rãi
+	cho bài toán này. Tuy nhiên, các mô hình này thường tập trung vào việc
+	học quan hệ thống kê giữa các điểm GPS và chưa khai thác đầy đủ các yếu
+	tố ngữ nghĩa như ý định di chuyển, mục tiêu chuyến đi, hoạt động của
+	người dùng và tri thức về không gian.
+	
+	Sự phát triển của Large Language Models tạo ra một hướng tiếp cận mới.
+	LLM có khả năng biểu diễn và suy luận trên thông tin không gian--thời
+	gian ở dạng ngôn ngữ. Các nghiên cứu gần đây về LLM-based mobility agents,
+	trong đó có AgentMove, cho thấy việc sử dụng memory, world knowledge và
+	agentic reasoning có thể cải thiện khả năng dự đoán vị trí kế tiếp.
+	
+	Tuy nhiên, một hạn chế quan trọng vẫn tồn tại. Khi có nhiều hướng di
+	chuyển khả dĩ, LLM thường phải lựa chọn một giả thuyết cuối cùng thay vì
+	duy trì một phân phối xác suất trên các giả thuyết.
+	
+	Giả sử tại vị trí hiện tại có ba khả năng:
+	
+	\begin{equation}
+		H =
+		\left\{
+		H_1,H_2,H_3
+		\right\},
+	\end{equation}
+	
+	trong đó:
+	
+	\begin{itemize}
+		\item $H_1$: tiếp tục đi thẳng;
+		\item $H_2$: rẽ phải;
+		\item $H_3$: rẽ trái.
+	\end{itemize}
+	
+	Một hệ thống dự đoán thông thường có thể lựa chọn:
+	
+	\begin{equation}
+		\hat{H}
+		=
+		\arg\max_{H_i} P(H_i\mid\mathcal{T}_{1:t}).
+	\end{equation}
+	
+	Tuy nhiên, việc chỉ giữ lại một giả thuyết sẽ làm mất thông tin về bất
+	định.
+	
+	Nghiên cứu này đề xuất thay thế cách tiếp cận trên bằng một trạng thái
+	belief:
+	
+	\begin{equation}
+		B_t
+		=
+		\left\{
+		P(H_1),
+		P(H_2),
+		\ldots,
+		P(H_K)
+		\right\}.
+	\end{equation}
+	
+	Trạng thái belief được cập nhật liên tục khi quan sát mới xuất hiện:
+	
+	\begin{equation}
+		B_t
+		\rightarrow
+		B_{t+1}.
+	\end{equation}
+	
+	Ý tưởng trung tâm của nghiên cứu là kết hợp ba khả năng:
+	
+	\begin{equation}
+		\boxed{
+			\text{LLM Reasoning}
+			+
+			\text{Bayesian Belief}
+			+
+			\text{Agentic Decision Making}
+		}
+	\end{equation}
+	
+	Trong đó LLM chịu trách nhiệm suy luận ngữ nghĩa và sinh giả thuyết,
+	Bayesian Belief Network định lượng và cập nhật bất định, còn Agent quyết
+	định khi nào cần suy luận thêm.
+	
+	% ============================================================
+	\section{Động lực nghiên cứu}
+	
+	\subsection{Hạn chế của dự đoán tất định}
+	
+	Một mô hình dự đoán thông thường có dạng:
+	
+	\begin{equation}
+		\hat{p}_{t+1}
+		=
+		f
+		\left(
+		p_1,\ldots,p_t
+		\right).
+	\end{equation}
+	
+	Cách biểu diễn này ngầm giả định rằng có một kết quả tối ưu duy nhất.
+	Tuy nhiên, mobility trajectory thường có tính đa phương thức.
+	
+	Từ cùng một vị trí, phương tiện có thể:
+	
+	\begin{equation}
+		P(p_{t+1}\mid\mathcal{T})
+		=
+		\sum_{k=1}^{K}
+		P(p_{t+1}\mid H_k,\mathcal{T})
+		P(H_k\mid\mathcal{T}).
+	\end{equation}
+	
+	Do đó, việc mô hình hóa phân phối trên các giả thuyết là phù hợp hơn
+	với bản chất của bài toán.
+	
+	\subsection{LLM có khả năng reasoning nhưng chưa có belief state rõ ràng}
+	
+	LLM có thể suy luận rằng một trajectory có khả năng tương ứng với hành
+	trình đi làm:
+	
+	\begin{equation}
+		P(
+		Intent=\text{commuting}
+		\mid
+		\mathcal{T}
+		)
+		\approx 0.72.
+	\end{equation}
+	
+	Tuy nhiên, confidence do LLM sinh ra không nhất thiết là một xác suất
+	được hiệu chỉnh tốt.
+	
+	Vì vậy, nghiên cứu đề xuất tách hai vai trò:
+	
+	\begin{equation}
+		\text{LLM}
+		\rightarrow
+		\text{Semantic Hypothesis}
+	\end{equation}
+	
+	và:
+	
+	\begin{equation}
+		\text{BBN}
+		\rightarrow
+		\text{Probabilistic Belief}.
+	\end{equation}
+	
+	\subsection{Động lực cho adaptive reasoning}
+	
+	Không phải mọi trajectory đều cần nhiều bước suy luận.
+	
+	Nếu:
+	
+	\begin{equation}
+		H(B_t)
+		=
+		-\sum_i P(H_i)\log P(H_i)
+	\end{equation}
+	
+	nhỏ, Agent có thể trực tiếp dự đoán.
+	
+	Ngược lại, nếu:
+	
+	\begin{equation}
+		H(B_t)>\tau,
+	\end{equation}
+	
+	Agent cần thực hiện thêm reasoning hoặc khai thác thêm context.
+	
+	Điều này cho phép giảm chi phí gọi LLM trong các trường hợp prediction
+	đã có độ tin cậy cao.
+	
+	% ============================================================
+	\section{Khoảng trống nghiên cứu}
+	
+	Nghiên cứu đề xuất tập trung vào bốn khoảng trống chính.
+	
+	\begin{enumerate}
+		
+		\item
+		Các mô hình LLM-based mobility reasoning có khả năng suy luận ngữ nghĩa
+		nhưng chưa khai thác đầy đủ một belief state xác suất có thể cập nhật
+		theo thời gian.
+		
+		\item
+		Các mô hình Bayesian truyền thống có khả năng biểu diễn bất định nhưng
+		khó khai thác world knowledge và semantic mobility intent ở mức cao.
+		
+		\item
+		Hai loại reasoning trên thường được nghiên cứu riêng biệt thay vì kết
+		hợp trong một agentic framework.
+		
+		\item
+		Chi phí suy luận của LLM có thể cao nếu Agent luôn thực hiện nhiều bước
+		reasoning, trong khi không phải mọi trạng thái trajectory đều có mức độ
+		bất định cao.
+		
+	\end{enumerate}
+	
+	Từ đó, nghiên cứu đặt ra câu hỏi:
+	
+	\begin{quote}
+		Liệu việc kết hợp semantic reasoning của LLM với Bayesian belief reasoning
+		và adaptive agentic decision making có thể cải thiện độ chính xác,
+		độ tin cậy và khả năng chống chịu của dự đoán điểm GPS kế tiếp hay không?
+	\end{quote}
+	
+	% ============================================================
+	\section{Mục tiêu nghiên cứu}
+	
+	Mục tiêu tổng quát là xây dựng một framework LLM Agent có khả năng dự đoán
+	điểm GPS kế tiếp trong điều kiện bất định.
+	
+	Các mục tiêu cụ thể gồm:
+	
+	\begin{enumerate}
+		
+		\item
+		Xây dựng biểu diễn trajectory phù hợp cho LLM-based mobility reasoning.
+		
+		\item
+		Thiết kế Mobility Belief Network biểu diễn các biến ẩn như mobility
+		intent, destination và next road.
+		
+		\item
+		Thiết kế cơ chế để LLM Agent sinh các mobility hypotheses.
+		
+		\item
+		Thiết kế Bayesian belief updating khi quan sát GPS mới.
+		
+		\item
+		Thiết kế cơ chế adaptive reasoning dựa trên uncertainty.
+		
+		\item
+		Đánh giá khả năng dự đoán trong điều kiện GPS thưa và nhiễu.
+		
+		\item
+		Đánh giá uncertainty calibration.
+		
+		\item
+		Đánh giá khả năng giảm chi phí suy luận LLM.
+		
+	\end{enumerate}
+	
+	% ============================================================
+	\section{Câu hỏi nghiên cứu}
+	
+	\subsection{RQ1}
+	
+	Liệu Bayesian belief reasoning có cải thiện độ chính xác dự đoán điểm
+	GPS kế tiếp so với LLM Agent thuần túy hay không?
+	
+	\subsection{RQ2}
+	
+	Liệu belief updating có giúp mô hình chống chịu tốt hơn với GPS bị thiếu
+	hoặc nhiễu hay không?
+	
+	\subsection{RQ3}
+	
+	Liệu Bayesian belief có giúp confidence của mô hình được calibration
+	tốt hơn hay không?
+	
+	\subsection{RQ4}
+	
+	Liệu adaptive reasoning có thể giảm số lần gọi LLM mà không làm giảm
+	đáng kể độ chính xác hay không?
+	
+	% ============================================================
+	\section{Framework BeliefMove}
+	
+	\subsection{Tổng quan}
+	
+	Framework đề xuất có sáu thành phần:
+	
+	\begin{enumerate}
+		\item GPS trajectory parser;
+		\item Spatial-temporal trajectory encoder;
+		\item LLM Mobility Agent;
+		\item Mobility Hypothesis Generator;
+		\item Bayesian Belief Network;
+		\item Adaptive Reasoning Controller.
+	\end{enumerate}
+	
+	Kiến trúc tổng quát được mô tả trong Hình~\ref{fig:architecture}.
+	
+	\begin{figure}[H]
+		\centering
+		
+		\begin{tikzpicture}[
+			node distance=8mm and 10mm,
+			block/.style={
+				rectangle,
+				rounded corners,
+				draw,
+				align=center,
+				minimum width=32mm,
+				minimum height=10mm
+			},
+			decision/.style={
+				diamond,
+				draw,
+				align=center,
+				aspect=2,
+				inner sep=2pt
+			},
+			arrow/.style={
+				-{Latex[length=2mm]}
+			}
+			]
+			
+			\node[block] (gps) {GPS\\Trajectory};
+			
+			\node[block, below=of gps] (encoder)
+			{Spatial--Temporal\\Encoder};
+			
+			\node[block, below=of encoder] (agent)
+			{LLM Mobility\\Agent};
+			
+			\node[block, below left=12mm and 8mm of agent] (hyp)
+			{Mobility\\Hypotheses};
+			
+			\node[block, below right=12mm and 8mm of agent] (context)
+			{World and\\Context Knowledge};
+			
+			\node[block, below=25mm of agent] (bbn)
+			{Bayesian Belief\\Network};
+			
+			\node[decision, below=of bbn] (decision)
+			{Uncertainty\\low?};
+			
+			\node[block, below left=10mm and 8mm of decision] (predict)
+			{Next GPS\\Prediction};
+			
+			\node[block, below right=10mm and 8mm of decision] (reason)
+			{Additional\\Reasoning};
+			
+			\node[block, below=of reason] (update)
+			{Belief\\Update};
+			
+			\draw[arrow] (gps) -- (encoder);
+			\draw[arrow] (encoder) -- (agent);
+			
+			\draw[arrow] (agent) -- (hyp);
+			\draw[arrow] (agent) -- (context);
+			
+			\draw[arrow] (hyp) -- (bbn);
+			\draw[arrow] (context) -- (bbn);
+			
+			\draw[arrow] (bbn) -- (decision);
+			
+			\draw[arrow] (decision) -- node[above left]{Yes} (predict);
+			\draw[arrow] (decision) -- node[above right]{No} (reason);
+			
+			\draw[arrow] (reason) -- (update);
+			\draw[arrow] (update) |- (bbn);
+			
+		\end{tikzpicture}
+		
+		\caption{
+			Kiến trúc tổng thể của BeliefMove.
+		}
+		\label{fig:architecture}
+		
+	\end{figure}
+	
+	% ============================================================
+	\section{Biểu diễn bài toán}
+	
+	Cho trajectory:
+	
+	\begin{equation}
+		\mathcal{T}_{1:t}
+		=
+		\{p_1,p_2,\ldots,p_t\}.
+	\end{equation}
+	
+	Mỗi điểm:
+	
+	\begin{equation}
+		p_i
+		=
+		(
+		lat_i,
+		lon_i,
+		time_i,
+		v_i,
+		h_i
+		),
+	\end{equation}
+	
+	trong đó:
+	
+	\begin{itemize}
+		\item $lat_i$: latitude;
+		\item $lon_i$: longitude;
+		\item $time_i$: timestamp;
+		\item $v_i$: tốc độ;
+		\item $h_i$: hướng di chuyển.
+	\end{itemize}
+	
+	Ngoài trajectory, hệ thống có thể sử dụng context:
+	
+	\begin{equation}
+		C_t
+		=
+		\{
+		road_t,
+		region_t,
+		POI_t,
+		traffic_t,
+		weather_t
+		\}.
+	\end{equation}
+	
+	Mục tiêu là học:
+	
+	\begin{equation}
+		P
+		\left(
+		p_{t+1}
+		\mid
+		\mathcal{T}_{1:t},
+		C_t
+		\right).
+	\end{equation}
+	
+	% ============================================================
+	\section{Mobility State}
+	
+	Thay vì đưa trực tiếp latitude và longitude vào BBN, nghiên cứu định
+	nghĩa một mobility state:
+	
+	\begin{equation}
+		S_t
+		=
+		\{
+		R_t,
+		A_t,
+		I_t,
+		D_t,
+		V_t,
+		H_t
+		\},
+	\end{equation}
+	
+	trong đó:
+	
+	\begin{itemize}
+		\item $R_t$: road segment;
+		\item $A_t$: activity;
+		\item $I_t$: mobility intent;
+		\item $D_t$: destination;
+		\item $V_t$: speed state;
+		\item $H_t$: heading state.
+	\end{itemize}
+	
+	Điểm GPS kế tiếp được suy ra từ mobility state:
+	
+	\begin{equation}
+		P(p_{t+1}\mid\mathcal{T}_{1:t})
+		=
+		\sum_{S_t}
+		P(p_{t+1}\mid S_t)
+		P(S_t\mid\mathcal{T}_{1:t}).
+	\end{equation}
+	
+	% ============================================================
+	\section{LLM Mobility Agent}
+	
+	LLM Agent nhận trajectory đã được chuẩn hóa thành một biểu diễn có ý
+	nghĩa:
+	
+	\begin{verbatim}
+		time = 08:10
+		road = R125
+		speed = 31 km/h
+		heading = East
+		region = District_1
+		
+		time = 08:11
+		road = R126
+		speed = 34 km/h
+		heading = East
+		region = District_1
+	\end{verbatim}
+	
+	Agent thực hiện ba nhiệm vụ.
+	
+	\subsection{Trajectory interpretation}
+	
+	Agent phân tích:
+	
+	\begin{equation}
+		Z_t
+		=
+		f_{\mathrm{LLM}}
+		(
+		\mathcal{T}_{1:t},
+		C_t
+		).
+	\end{equation}
+	
+	\subsection{Intent inference}
+	
+	Agent suy luận:
+	
+	\begin{equation}
+		P_{LLM}(I_t\mid Z_t).
+	\end{equation}
+	
+	Ví dụ:
+	
+	\begin{verbatim}
+		commuting = 0.72
+		shopping  = 0.18
+		other     = 0.10
+	\end{verbatim}
+	
+	\subsection{Hypothesis generation}
+	
+	Agent sinh:
+	
+	\begin{equation}
+		\mathcal{H}_t
+		=
+		\{
+		H_1,H_2,\ldots,H_K
+		\}.
+	\end{equation}
+	
+	Mỗi hypothesis có thể chứa:
+	
+	\begin{equation}
+		H_k
+		=
+		(
+		intent,
+		destination,
+		next\_road,
+		next\_region
+		).
+	\end{equation}
+	
+	% ============================================================
+	\section{Mobility Bayesian Belief Network}
+	
+	\subsection{Mục tiêu}
+	
+	BBN được sử dụng để mô hình hóa quan hệ xác suất giữa các biến mobility.
+	
+	Một mạng đề xuất:
+	
+	\begin{figure}[H]
+		\centering
+		
+		\begin{tikzpicture}[
+			node distance=12mm and 13mm,
+			state/.style={
+				rectangle,
+				rounded corners,
+				draw,
+				minimum width=25mm,
+				minimum height=8mm,
+				align=center
+			},
+			arrow/.style={
+				-{Latex[length=2mm]}
+			}
+			]
+			
+			\node[state] (time) {Time};
+			
+			\node[state, below=of time] (activity) {Activity};
+			
+			\node[state, left=of activity] (history) {Trajectory\\History};
+			
+			\node[state, right=of activity] (poi) {POI /\\Context};
+			
+			\node[state, below=of activity] (intent) {Mobility\\Intent};
+			
+			\node[state, below=of intent] (destination)
+			{Destination};
+			
+			\node[state, left=of destination] (current)
+			{Current\\Road};
+			
+			\node[state, right=of destination] (heading)
+			{Heading};
+			
+			\node[state, below=of destination] (nextroad)
+			{Next\\Road};
+			
+			\node[state, below=of nextroad] (region)
+			{Next\\Region};
+			
+			\node[state, below=of region] (gps)
+			{Next GPS\\Point};
+			
+			\draw[arrow] (time) -- (activity);
+			\draw[arrow] (history) -- (intent);
+			\draw[arrow] (activity) -- (intent);
+			\draw[arrow] (poi) -- (intent);
+			
+			\draw[arrow] (intent) -- (destination);
+			
+			\draw[arrow] (current) -- (nextroad);
+			\draw[arrow] (heading) -- (nextroad);
+			\draw[arrow] (destination) -- (nextroad);
+			
+			\draw[arrow] (nextroad) -- (region);
+			\draw[arrow] (region) -- (gps);
+			
+		\end{tikzpicture}
+		
+		\caption{
+			Mobility Bayesian Belief Network.
+		}
+		\label{fig:bbn}
+	\end{figure}
+	
+	Các quan hệ xác suất chính gồm:
+	
+	\begin{equation}
+		P(I_t\mid History,Time,Activity,POI),
+	\end{equation}
+	
+	\begin{equation}
+		P(D_t\mid I_t,History),
+	\end{equation}
+	
+	\begin{equation}
+		P(R_{t+1}\mid R_t,H_t,D_t),
+	\end{equation}
+	
+	và:
+	
+	\begin{equation}
+		P(p_{t+1}\mid R_{t+1},V_t,H_t).
+	\end{equation}
+	
+	% ============================================================
+	\section{Bayesian Belief Updating}
+	
+	Tại thời điểm $t$, Agent duy trì belief:
+	
+	\begin{equation}
+		B_t(H_i)
+		=
+		P(H_i\mid E_{1:t}),
+	\end{equation}
+	
+	trong đó $E_{1:t}$ là toàn bộ evidence đã quan sát.
+	
+	Khi GPS mới $E_{t+1}$ xuất hiện:
+	
+	\begin{equation}
+		B_{t+1}(H_i)
+		=
+		P(H_i\mid E_{1:t+1}).
+	\end{equation}
+	
+	Theo Bayes:
+	
+	\begin{equation}
+		B_{t+1}(H_i)
+		=
+		\frac{
+			P(E_{t+1}\mid H_i)
+			B_t(H_i)
+		}{
+			\sum_{j=1}^{K}
+			P(E_{t+1}\mid H_j)
+			B_t(H_j)
+		}.
+	\end{equation}
+	
+	Ví dụ ban đầu:
+	
+	\begin{equation}
+		B_t
+		=
+		\{
+		0.50,
+		0.30,
+		0.20
+		\}.
+	\end{equation}
+	
+	Sau quan sát mới:
+	
+	\begin{equation}
+		B_{t+1}
+		=
+		\{
+		0.68,
+		0.22,
+		0.10
+		\}.
+	\end{equation}
+	
+	Belief state vì vậy được cập nhật thay vì tái khởi tạo sau mỗi quan sát.
+	
+	% ============================================================
+	\section{LLM--BBN Belief Fusion}
+	
+	LLM tạo:
+	
+	\begin{equation}
+		P_{LLM}(H_i).
+	\end{equation}
+	
+	BBN tạo:
+	
+	\begin{equation}
+		P_{BBN}(H_i).
+	\end{equation}
+	
+	Một baseline fusion đơn giản là:
+	
+	\begin{equation}
+		P^*(H_i)
+		=
+		\alpha
+		P_{LLM}(H_i)
+		+
+		(1-\alpha)
+		P_{BBN}(H_i).
+	\end{equation}
+	
+	Tuy nhiên, nghiên cứu đề xuất sử dụng trọng số thích nghi:
+	
+	\begin{equation}
+		\alpha_t
+		=
+		f
+		\left(
+		U_{LLM},
+		U_{BBN},
+		D_{LLM,BBN}
+		\right),
+	\end{equation}
+	
+	trong đó:
+	
+	\begin{equation}
+		U_{LLM}
+	\end{equation}
+	
+	là uncertainty của LLM,
+	
+	\begin{equation}
+		U_{BBN}
+	\end{equation}
+	
+	là uncertainty của BBN, và:
+	
+	\begin{equation}
+		D_{LLM,BBN}
+		=
+		D_{KL}
+		\left(
+		P_{LLM}
+		\|
+		P_{BBN}
+		\right)
+	\end{equation}
+	
+	đo mức độ bất đồng giữa hai nguồn reasoning.
+	
+	Belief cuối cùng:
+	
+	\begin{equation}
+		P^*(H_i)
+		=
+		\alpha_tP_{LLM}(H_i)
+		+
+		(1-\alpha_t)P_{BBN}(H_i).
+	\end{equation}
+	
+	% ============================================================
+	\section{Belief Memory}
+	
+	Một thành phần mới được đề xuất là \textbf{Bayesian Belief Memory}.
+	
+	Thay vì chỉ lưu text hoặc historical trajectory, Agent lưu:
+	
+	\begin{equation}
+		M_t^{B}
+		=
+		\{
+		B_1,B_2,\ldots,B_t
+		\}.
+	\end{equation}
+	
+	Mỗi belief state:
+	
+	\begin{equation}
+		B_t
+		=
+		\{
+		P(I_t),
+		P(D_t),
+		P(R_{t+1}),
+		P(Region_{t+1})
+		\}.
+	\end{equation}
+	
+	Belief Memory cho phép Agent truy hồi các trạng thái bất định trước đó
+	và cập nhật chúng khi trajectory mới xuất hiện.
+	
+	% ============================================================
+	\section{Adaptive Uncertainty-Aware Reasoning}
+	
+	Entropy của belief được định nghĩa:
+	
+	\begin{equation}
+		\mathcal{H}(B_t)
+		=
+		-\sum_{i=1}^{K}
+		P(H_i)
+		\log P(H_i).
+	\end{equation}
+	
+	Nếu:
+	
+	\begin{equation}
+		\mathcal{H}(B_t)<\tau,
+	\end{equation}
+	
+	Agent thực hiện prediction.
+	
+	Nếu:
+	
+	\begin{equation}
+		\mathcal{H}(B_t)\geq\tau,
+	\end{equation}
+	
+	Agent thực hiện additional reasoning.
+	
+	Một policy đơn giản:
+	
+	\begin{equation}
+		a_t
+		=
+		\begin{cases}
+			predict,
+			&
+			\mathcal{H}(B_t)<\tau
+			\\
+			reason,
+			&
+			\mathcal{H}(B_t)\geq\tau.
+		\end{cases}
+	\end{equation}
+	
+	Một policy mở rộng có thể sử dụng:
+	
+	\begin{equation}
+		a_t
+		=
+		\pi
+		(
+		B_t,
+		\mathcal{H}(B_t),
+		D_{LLM,BBN},
+		C_t
+		).
+	\end{equation}
+	
+	Các action có thể gồm:
+	
+	\begin{equation}
+		a_t
+		\in
+		\{
+		predict,
+		retrieve,
+		reason,
+		update,
+		observe
+		\}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Dự đoán điểm GPS kế tiếp}
+	
+	Sau khi có belief:
+	
+	\begin{equation}
+		P(R_{t+1}\mid E_{1:t}),
+	\end{equation}
+	
+	mô hình dự đoán GPS:
+	
+	\begin{equation}
+		P(
+		p_{t+1}
+		\mid
+		R_{t+1},
+		V_t,
+		H_t,
+		B_t
+		).
+	\end{equation}
+	
+	Điểm dự đoán có thể được tính:
+	
+	\begin{equation}
+		\hat{p}_{t+1}
+		=
+		\sum_{r}
+		P(R_{t+1}=r\mid B_t)
+		\hat{p}_{t+1}^{(r)}.
+	\end{equation}
+	
+	Trong trường hợp multi-modal prediction:
+	
+	\begin{equation}
+		\mathcal{P}_{t+1}
+		=
+		\{
+		(
+		\hat{p}_{t+1}^{(1)},q_1),
+		\ldots,
+		(
+		\hat{p}_{t+1}^{(K)},q_K)
+		\}.
+	\end{equation}
+	
+	Trong đó $q_i$ là xác suất của hypothesis tương ứng.
+	
+	% ============================================================
+	\section{Multi-step Trajectory Forecasting}
+	
+	Framework có thể được mở rộng từ next-point prediction sang multi-step
+	forecasting:
+	
+	\begin{equation}
+		\hat{\mathcal{T}}_{t+1:t+K}
+		=
+		\{
+		\hat{p}_{t+1},
+		\ldots,
+		\hat{p}_{t+K}
+		\}.
+	\end{equation}
+	
+	Sau mỗi bước, belief được cập nhật:
+	
+	\begin{equation}
+		B_t
+		\rightarrow
+		B_{t+1}
+		\rightarrow
+		\cdots
+		\rightarrow
+		B_{t+K}.
+	\end{equation}
+	
+	Do đó framework không chỉ dự đoán một điểm độc lập mà thực hiện
+	sequential probabilistic forecasting.
+	
+	% ============================================================
+	\section{Thuật toán BeliefMove}
+	
+	\begin{algorithm}[H]
+		\caption{BeliefMove: Bayesian Belief-Augmented Mobility Agent}
+		\label{alg:beliefmove}
+		
+		\begin{algorithmic}[1]
+			
+			\Require
+			Trajectory $\mathcal{T}_{1:t}$,
+			context $C_t$,
+			belief state $B_t$,
+			uncertainty threshold $\tau$
+			
+			\Ensure
+			Next GPS prediction $\hat{p}_{t+1}$
+			
+			\State
+			$Z_t
+			\gets
+			\mathrm{Encode}
+			(\mathcal{T}_{1:t},C_t)$
+			
+			\State
+			$S_t
+			\gets
+			\mathrm{LLMReason}
+			(Z_t)$
+			
+			\State
+			$\mathcal{H}_t
+			\gets
+			\mathrm{GenerateHypotheses}
+			(S_t)$
+			
+			\State
+			$P_{LLM}
+			\gets
+			\mathrm{EstimateLLMBelief}
+			(\mathcal{H}_t)$
+			
+			\State
+			$P_{BBN}
+			\gets
+			\mathrm{BayesianInference}
+			(B_t,S_t)$
+			
+			\State
+			$D
+			\gets
+			D_{KL}(P_{LLM}\|P_{BBN})$
+			
+			\State
+			$B_t
+			\gets
+			\mathrm{AdaptiveFusion}
+			(P_{LLM},P_{BBN},D)$
+			
+			\State
+			$U
+			\gets
+			\mathrm{Entropy}(B_t)$
+			
+			\If{$U \geq \tau$}
+			
+			\State
+			$C_t'
+			\gets
+			\mathrm{RetrieveAdditionalContext}(C_t)$
+			
+			\State
+			$S_t'
+			\gets
+			\mathrm{AdditionalReasoning}(Z_t,C_t')$
+			
+			\State
+			$B_t
+			\gets
+			\mathrm{UpdateBelief}(B_t,S_t')$
+			
+			\EndIf
+			
+			\State
+			$\hat{p}_{t+1}
+			\gets
+			\mathrm{GPSDecoder}(B_t)$
+			
+			\State
+			$B_{t+1}
+			\gets
+			\mathrm{BeliefUpdate}(B_t,p_{t+1})$
+			
+			\State
+			\Return
+			$\hat{p}_{t+1}$
+			
+		\end{algorithmic}
+	\end{algorithm}
+	
+	% ============================================================
+	\section{Thiết kế thực nghiệm}
+	
+	\subsection{Dataset}
+	
+	Nghiên cứu đề xuất sử dụng ít nhất ba tập dữ liệu:
+	
+	\begin{itemize}
+		\item GeoLife;
+		\item T-Drive;
+		\item Porto Taxi.
+	\end{itemize}
+	
+	Các dataset này đại diện cho các dạng mobility khác nhau, bao gồm
+	human mobility và vehicle mobility.
+	
+	% ============================================================
+	\subsection{Tiền xử lý}
+	
+	Pipeline:
+	
+	\begin{equation}
+		Raw\ GPS
+		\rightarrow
+		Cleaning
+		\rightarrow
+		Segmentation
+		\rightarrow
+		Map\ Matching
+		\rightarrow
+		Spatial\ Representation
+		\rightarrow
+		Trajectory\ Sequence.
+	\end{equation}
+	
+	Các bước gồm:
+	
+	\begin{enumerate}
+		
+		\item
+		Sắp xếp dữ liệu theo user hoặc vehicle và timestamp.
+		
+		\item
+		Loại bỏ các điểm GPS không hợp lệ.
+		
+		\item
+		Tính tốc độ:
+		
+		\begin{equation}
+			v_i
+			=
+			\frac{
+				d(p_i,p_{i-1})
+			}{
+				t_i-t_{i-1}
+			}.
+		\end{equation}
+		
+		\item
+		Loại bỏ hoặc đánh dấu các điểm có tốc độ bất thường.
+		
+		\item
+		Map matching sang road segment nếu bản đồ đường được sử dụng.
+		
+		\item
+		Chuyển trajectory thành các cửa sổ quan sát.
+		
+	\end{enumerate}
+	
+	% ============================================================
+	\section{Các baseline}
+	
+	Các baseline được chia thành bốn nhóm.
+	
+	\subsection{Traditional models}
+	
+	\begin{enumerate}
+		\item Historical Average;
+		\item Markov Model;
+		\item Kalman Filter.
+	\end{enumerate}
+	
+	\subsection{Deep learning models}
+	
+	\begin{enumerate}
+		\item LSTM;
+		\item GRU;
+		\item Transformer.
+	\end{enumerate}
+	
+	\subsection{LLM-based models}
+	
+	\begin{enumerate}
+		\item Direct LLM;
+		\item AgentMove;
+		\item Các LLM-based trajectory models phù hợp.
+	\end{enumerate}
+	
+	\subsection{Proposed models}
+	
+	\begin{enumerate}
+		\item AgentMove + BBN;
+		\item AgentMove + Intent + BBN;
+		\item BeliefMove;
+		\item BeliefMove + Adaptive Reasoning.
+	\end{enumerate}
+	
+	% ============================================================
+	\section{Ablation Study}
+	
+	Ablation study gồm:
+	
+	\begin{table}[H]
+		\centering
+		\caption{Các phiên bản ablation của framework.}
+		\label{tab:ablation}
+		
+		\begin{tabular}{lccccc}
+			\toprule
+			Model & LLM & Agent & Intent & BBN & Adaptive \\
+			\midrule
+			Transformer & & & & & \\
+			LLM & \checkmark & & & & \\
+			AgentMove & \checkmark & \checkmark & \checkmark & & \\
+			AgentMove-BBN & \checkmark & \checkmark & & \checkmark & \\
+			AgentMove-Intent-BBN & \checkmark & \checkmark & \checkmark & \checkmark & \\
+			BeliefMove & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+			\bottomrule
+		\end{tabular}
+		
+	\end{table}
+	
+	Mục tiêu của ablation là xác định đóng góp độc lập của từng thành phần.
+	
+	% ============================================================
+	\section{Metrics}
+	
+	\subsection{Average Displacement Error}
+	
+	\begin{equation}
+		ADE
+		=
+		\frac{1}{N}
+		\sum_{i=1}^{N}
+		d(
+		p_i,\hat{p}_i
+		).
+	\end{equation}
+	
+	\subsection{Final Displacement Error}
+	
+	\begin{equation}
+		FDE
+		=
+		d(
+		p_T,\hat{p}_T
+		).
+	\end{equation}
+	
+	\subsection{Haversine Distance}
+	
+	Khoảng cách địa lý được tính bằng công thức Haversine.
+	
+	\begin{equation}
+		d
+		=
+		2R
+		\arcsin
+		\left(
+		\sqrt{
+			\sin^2
+			\frac{\Delta\phi}{2}
+			+
+			\cos(\phi_1)
+			\cos(\phi_2)
+			\sin^2
+			\frac{\Delta\lambda}{2}
+		}
+		\right).
+	\end{equation}
+	
+	\subsection{Top-$K$ Accuracy}
+	
+	\begin{equation}
+		Accuracy@K
+		=
+		\frac{
+			\text{Number of correct predictions within top-}K
+		}{
+			N
+		}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Uncertainty Calibration}
+	
+	Do framework sinh ra probability distribution, cần đánh giá calibration.
+	
+	\subsection{Negative Log-Likelihood}
+	
+	\begin{equation}
+		NLL
+		=
+		-\frac{1}{N}
+		\sum_{i=1}^{N}
+		\log
+		P(y_i\mid x_i).
+	\end{equation}
+	
+	\subsection{Brier Score}
+	
+	\begin{equation}
+		BS
+		=
+		\frac{1}{N}
+		\sum_{i=1}^{N}
+		(p_i-y_i)^2.
+	\end{equation}
+	
+	\subsection{Expected Calibration Error}
+	
+	\begin{equation}
+		ECE
+		=
+		\sum_{m=1}^{M}
+		\frac{|B_m|}{N}
+		\left|
+		acc(B_m)-conf(B_m)
+		\right|.
+	\end{equation}
+	
+	% ============================================================
+	\section{Thí nghiệm với GPS bị thiếu}
+	
+	Để đánh giá robustness, ngẫu nhiên loại bỏ một tỷ lệ GPS points:
+	
+	\begin{equation}
+		r
+		\in
+		\{
+		0,
+		0.1,
+		0.2,
+		0.3,
+		0.5
+		\}.
+	\end{equation}
+	
+	So sánh:
+	
+	\begin{equation}
+		ADE(r),
+		FDE(r).
+	\end{equation}
+	
+	Giả thuyết:
+	
+	\begin{equation}
+		\frac{\partial ADE}{\partial r}
+		\Bigg|_{\text{BeliefMove}}
+		<
+		\frac{\partial ADE}{\partial r}
+		\Bigg|_{\text{AgentMove}}.
+	\end{equation}
+	
+	Điều này cho thấy belief state giúp mô hình duy trì thông tin khi quan sát
+	bị thiếu.
+	
+	% ============================================================
+	\section{Thí nghiệm với GPS nhiễu}
+	
+	GPS noise được mô hình hóa:
+	
+	\begin{equation}
+		p_i'
+		=
+		p_i+\epsilon_i,
+	\end{equation}
+	
+	trong đó:
+	
+	\begin{equation}
+		\epsilon_i
+		\sim
+		\mathcal{N}(0,\sigma^2).
+	\end{equation}
+	
+	Thử nghiệm với:
+	
+	\begin{equation}
+		\sigma
+		\in
+		\{
+		5m,
+		10m,
+		20m,
+		50m,
+		100m
+		\}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Cross-City Generalization}
+	
+	Mô hình được train trên một thành phố và test trên thành phố khác.
+	
+	Ví dụ:
+	
+	\begin{equation}
+		Train=Beijing,
+		\qquad
+		Test=Porto.
+	\end{equation}
+	
+	Đánh giá:
+	
+	\begin{equation}
+		\Delta ADE
+		=
+		ADE_{cross-city}
+		-
+		ADE_{in-city}.
+	\end{equation}
+	
+	Một mô hình tổng quát tốt nên có:
+	
+	\begin{equation}
+		\Delta ADE
+		\rightarrow
+		0.
+	\end{equation}
+	
+	% ============================================================
+	\section{LLM Cost Analysis}
+	
+	Đánh giá:
+	
+	\begin{equation}
+		Cost
+		=
+		f(
+		N_{calls},
+		N_{tokens},
+		Latency
+		).
+	\end{equation}
+	
+	So sánh:
+	
+	\begin{table}[H]
+		\centering
+		\caption{Đánh giá hiệu quả suy luận.}
+		\label{tab:efficiency}
+		
+		\begin{tabular}{lcccc}
+			\toprule
+			Model & LLM Calls & Tokens & Latency & ADE \\
+			\midrule
+			LLM & & & & \\
+			AgentMove & & & & \\
+			AgentMove-BBN & & & & \\
+			BeliefMove & & & & \\
+			\bottomrule
+		\end{tabular}
+		
+	\end{table}
+	
+	Mục tiêu là chứng minh:
+	
+	\begin{equation}
+		Cost_{BeliefMove}
+		<
+		Cost_{AgentMove}
+	\end{equation}
+	
+	trong khi:
+	
+	\begin{equation}
+		ADE_{BeliefMove}
+		\leq
+		ADE_{AgentMove}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Nghiên cứu sự bất đồng giữa LLM và BBN}
+	
+	Định nghĩa:
+	
+	\begin{equation}
+		D_t
+		=
+		D_{KL}
+		\left(
+		P_{LLM}
+		\|
+		P_{BBN}
+		\right).
+	\end{equation}
+	
+	Nếu:
+	
+	\begin{equation}
+		D_t>\delta,
+	\end{equation}
+	
+	Agent thực hiện reflection.
+	
+	Quy trình:
+	
+	\begin{equation}
+		LLM
+		\rightarrow
+		BBN
+		\rightarrow
+		Disagreement
+		\rightarrow
+		Reflection
+		\rightarrow
+		Belief\ Update.
+	\end{equation}
+	
+	Đây là một thí nghiệm quan trọng để chứng minh Agent không chỉ là một
+	pipeline tuần tự mà có khả năng tự điều chỉnh reasoning.
+	
+	% ============================================================
+	\section{Các giả thuyết nghiên cứu}
+	
+	\subsection{H1}
+	
+	BeliefMove có ADE và FDE thấp hơn AgentMove.
+	
+	\begin{equation}
+		ADE_{BeliefMove}
+		<
+		ADE_{AgentMove}.
+	\end{equation}
+	
+	\subsection{H2}
+	
+	BeliefMove có robustness tốt hơn khi GPS bị thiếu.
+	
+	\begin{equation}
+		ADE_{BeliefMove}(r)
+		<
+		ADE_{AgentMove}(r).
+	\end{equation}
+	
+	\subsection{H3}
+	
+	BeliefMove có calibration tốt hơn.
+	
+	\begin{equation}
+		ECE_{BeliefMove}
+		<
+		ECE_{AgentMove}.
+	\end{equation}
+	
+	\subsection{H4}
+	
+	Adaptive reasoning giảm chi phí LLM.
+	
+	\begin{equation}
+		Calls_{Adaptive}
+		<
+		Calls_{FullReasoning}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Các đóng góp dự kiến}
+	
+	Nghiên cứu dự kiến có bốn đóng góp chính.
+	
+	\begin{enumerate}
+		
+		\item
+		Đề xuất BeliefMove, một framework kết hợp LLM Agent và Bayesian Belief
+		Network cho dự đoán điểm GPS kế tiếp theo hướng probabilistic mobility
+		reasoning.
+		
+		\item
+		Đề xuất Mobility Belief Network biểu diễn có cấu trúc các biến ẩn gồm
+		mobility intent, destination, next road và next region.
+		
+		\item
+		Đề xuất Bayesian Belief Memory và adaptive belief updating để duy trì
+		và cập nhật nhiều mobility hypotheses trong quá trình trajectory tiếp
+		diễn.
+		
+		\item
+		Đề xuất adaptive uncertainty-aware reasoning dựa trên entropy và
+		LLM--BBN disagreement nhằm cân bằng prediction accuracy và LLM inference
+		cost.
+		
+	\end{enumerate}
+	
+	% ============================================================
+	\section{Kế hoạch thực nghiệm}
+	
+	Nghiên cứu được triển khai theo các giai đoạn sau.
+	
+	\begin{table}[H]
+		\centering
+		\caption{Lộ trình thực nghiệm.}
+		\label{tab:roadmap}
+		
+		\begin{tabular}{cll}
+			\toprule
+			Giai đoạn & Nội dung & Kết quả \\
+			\midrule
+			1 & Reproduce AgentMove & Baseline \\
+			2 & GPS preprocessing & GPS benchmark \\
+			3 & Traditional baselines & Baseline results \\
+			4 & LLM baseline & LLM results \\
+			5 & AgentMove-GPS & Agent baseline \\
+			6 & Standalone BBN & BBN baseline \\
+			7 & LLM + BBN & Initial proposed model \\
+			8 & Belief Memory & Sequential belief model \\
+			9 & Adaptive reasoning & Final model \\
+			10 & Robustness & Noise and missing GPS \\
+			11 & Calibration & Uncertainty evaluation \\
+			12 & Cross-city & Generalization \\
+			13 & Cost analysis & Efficiency evaluation \\
+			14 & Case studies & Qualitative analysis \\
+			\bottomrule
+		\end{tabular}
+		
+	\end{table}
+	
+	% ============================================================
+	\section{Thiết kế thí nghiệm tổng thể}
+	
+	Một benchmark hoàn chỉnh có thể được tổ chức như sau:
+	
+	\begin{equation}
+		Datasets
+		\times
+		Models
+		\times
+		Noise
+		\times
+		MissingRate
+		\times
+		Seeds.
+	\end{equation}
+	
+	Trong đó:
+	
+	\begin{equation}
+		Datasets
+		=
+		\{
+		GeoLife,
+		T\text{-}Drive,
+		Porto
+		\},
+	\end{equation}
+	
+	\begin{equation}
+		Models
+		=
+		\{
+		LSTM,
+		Transformer,
+		LLM,
+		AgentMove,
+		AgentMove\text{-}BBN,
+		BeliefMove
+		\}.
+	\end{equation}
+	
+	% ============================================================
+	\section{Phân tích trường hợp điển hình}
+	
+	Một trajectory có thể có dạng:
+	
+	\begin{equation}
+		P_1
+		\rightarrow
+		P_2
+		\rightarrow
+		P_3
+		\rightarrow
+		P_4.
+	\end{equation}
+	
+	Tại $P_4$, Agent sinh:
+	
+	\begin{equation}
+		P_{LLM}
+		=
+		\{
+		Road_A:0.72,
+		Road_B:0.18,
+		Road_C:0.10
+		\}.
+	\end{equation}
+	
+	Trong khi BBN có:
+	
+	\begin{equation}
+		P_{BBN}
+		=
+		\{
+		Road_A:0.41,
+		Road_B:0.49,
+		Road_C:0.10
+		\}.
+	\end{equation}
+	
+	Mức độ bất đồng được tính:
+	
+	\begin{equation}
+		D_{KL}
+		=
+		D_{KL}
+		(
+		P_{LLM}
+		\|
+		P_{BBN}
+		).
+	\end{equation}
+	
+	Nếu mức độ bất đồng cao, Agent kích hoạt thêm reasoning.
+	
+	Sau khi có thêm context:
+	
+	\begin{equation}
+		P^*
+		=
+		\{
+		Road_A:0.56,
+		Road_B:0.34,
+		Road_C:0.10
+		\}.
+	\end{equation}
+	
+	Điểm GPS tiếp theo được sinh từ belief cuối cùng.
+	
+	% ============================================================
+	\section{Định hướng mở rộng}
+	
+	Framework có thể được mở rộng theo bốn hướng.
+	
+	\subsection{Multi-step forecasting}
+	
+	\begin{equation}
+		p_{t+1:t+K}.
+	\end{equation}
+	
+	\subsection{Destination prediction}
+	
+	Thay vì chỉ dự đoán điểm kế tiếp:
+	
+	\begin{equation}
+		P(Destination\mid\mathcal{T}).
+	\end{equation}
+	
+	\subsection{Trajectory generation}
+	
+	Sinh toàn bộ trajectory có xác suất:
+	
+	\begin{equation}
+		P(
+		p_{t+1},\ldots,p_{t+K}
+		\mid
+		\mathcal{T}_{1:t}
+		).
+	\end{equation}
+	
+	\subsection{Real-time mobility agent}
+	
+	Agent có thể liên tục nhận GPS stream:
+	
+	\begin{equation}
+		GPS_t
+		\rightarrow
+		Belief_t
+		\rightarrow
+		Prediction_t
+		\rightarrow
+		GPS_{t+1}
+		\rightarrow
+		Belief_{t+1}.
+	\end{equation}
+	
+	Điều này mở ra khả năng ứng dụng trong Intelligent Transportation Systems.
+	
+	% ============================================================
+	\section{Kết luận}
+	
+	Nghiên cứu đề xuất BeliefMove, một framework kết hợp Large Language
+	Model Agent, Bayesian Belief Network và adaptive reasoning cho bài toán
+	dự đoán điểm GPS kế tiếp. Ý tưởng trung tâm là chuyển bài toán từ
+	deterministic next-point prediction sang probabilistic agentic mobility
+	reasoning.
+	
+	Trong framework đề xuất, LLM không trực tiếp quyết định một điểm GPS
+	duy nhất mà đóng vai trò semantic reasoner, phân tích trajectory, suy
+	luận mobility intent và sinh các giả thuyết di chuyển. Bayesian Belief
+	Network đóng vai trò probabilistic reasoner, định lượng xác suất của các
+	giả thuyết và cập nhật belief khi quan sát mới xuất hiện. Agent đóng vai
+	trò decision maker, sử dụng uncertainty và disagreement để quyết định
+	khi nào cần thực hiện thêm reasoning.
+	
+	Mô hình vì vậy được xây dựng dựa trên ba nguyên lý:
+	
+	\begin{equation}
+		\boxed{
+			Semantic\ Reasoning
+			+
+			Probabilistic\ Belief
+			+
+			Adaptive\ Decision
+		}
+	\end{equation}
+	
+	Khung nghiên cứu này không chỉ hướng tới cải thiện ADE hoặc FDE mà còn
+	đặt trọng tâm vào robustness, uncertainty calibration, cross-city
+	generalization và inference efficiency. Đây là các yếu tố cần thiết để
+	LLM-based trajectory prediction có thể tiến từ một mô hình dự đoán vị
+	trí sang một hệ thống agentic mobility intelligence có khả năng suy luận
+	và ra quyết định dưới điều kiện bất định.
+	
+\end{document}

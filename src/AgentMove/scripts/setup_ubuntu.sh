@@ -34,12 +34,14 @@ import numpy
 import pandas
 import sklearn
 import torch
+import tqdm
 print(json.dumps({
     "python": __import__("sys").version.split()[0],
     "numpy": numpy.__version__,
     "pandas": pandas.__version__,
     "scikit_learn": sklearn.__version__,
     "torch": torch.__version__,
+    "tqdm": tqdm.__version__,
     "cuda_available": torch.cuda.is_available(),
 }, indent=2))
 PY

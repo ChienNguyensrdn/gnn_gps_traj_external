@@ -13,6 +13,19 @@ curl -fsS --max-time 3 "${BASE_URL%/v1}/api/version" >/dev/null || {
 echo "Installed models:"
 curl -fsS "${BASE_URL%/v1}/api/tags" | .venv/bin/python -m json.tool
 
+if ! curl -fsS "${BASE_URL%/v1}/api/tags" | .venv/bin/python -c '
+import json, sys
+requested = sys.argv[1]
+payload = json.load(sys.stdin)
+names = {row.get("name") for row in payload.get("models", [])}
+raise SystemExit(0 if requested in names else 1)
+' "$MODEL"; then
+  echo "Model '$MODEL' is not installed in the Ollama server at ${BASE_URL%/v1}." >&2
+  echo "Install it into this exact server with:" >&2
+  echo "  OLLAMA_HOST=127.0.0.1:11434 ollama pull '$MODEL'" >&2
+  exit 2
+fi
+
 OLLAMA_BASE_URL="$BASE_URL" OLLAMA_API_KEY=ollama .venv/bin/python - "$MODEL" <<'PY'
 import os
 import sys

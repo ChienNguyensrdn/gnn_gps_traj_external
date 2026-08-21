@@ -28,6 +28,8 @@ done
 curl -fsS --max-time 2 http://127.0.0.1:11434/api/version >/dev/null || { echo "Ollama failed to start" >&2; exit 1; }
 
 ollama pull "$PRIMARY_MODEL"
-ollama pull "$SECOND_MODEL"
+if [[ "${INSTALL_SECOND_MODEL:-1}" == "1" ]]; then
+  ollama pull "$SECOND_MODEL"
+fi
 echo "Ready: $PRIMARY_MODEL and $SECOND_MODEL at http://127.0.0.1:11434"
 echo "For a proprietary OpenAI API comparison, use an OpenAI model through its API; it cannot be pulled by Ollama."

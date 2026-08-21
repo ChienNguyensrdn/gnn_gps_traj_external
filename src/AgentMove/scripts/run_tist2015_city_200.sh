@@ -70,6 +70,7 @@ if [[ "$OSM_LABEL" == "no-osm" ]]; then
 fi
 
 ./scripts/start_ollama.sh
+OLLAMA_BASE_URL="http://127.0.0.1:11434/v1" ./scripts/test_ollama.sh "$OLLAMA_MODEL"
 
 "$PYTHON_BIN" -m hybrid.cli \
   --validation "$BASE/validation.jsonl" \

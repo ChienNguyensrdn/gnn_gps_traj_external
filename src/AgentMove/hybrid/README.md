@@ -11,69 +11,7 @@ Trajectory → CGM/top-k prior → LLM evidence → Bayesian Network → posteri
 - Stage 3: Bayesian Network tường minh với `L → H`, `L → S`.
 - Output: metrics, ablation và artefact trả lời RQ1–RQ4.
 
-README gốc của repository còn đề xuất nhánh mở rộng Dual-Evolution
-Distillation. Nhánh này được triển khai trong `hybrid.dual_evolution`: teacher
-Neural-CGM cung cấp final logits, hai depth states và chuỗi temporal states;
-student học bằng CE + KD + trajectory + velocity + temporal loss. Chế độ
-`correct`, `reverse`, `random` chỉ thay đổi thứ tự input, không đổi split/label.
-
 Các lệnh dưới đây chạy từ thư mục `src/AgentMove`.
-
-## Pipeline chuẩn TIST2015
-
-```bash
-./scripts/setup_ubuntu.sh              # lần đầu trên Ubuntu
-./scripts/tist2015_pipeline.sh audit
-./scripts/tist2015_pipeline.sh download   # chỉ khi raw files còn thiếu
-./scripts/tist2015_pipeline.sh prepare
-./scripts/tist2015_pipeline.sh train
-CITIES=Tokyo VALIDATION_LIMIT=10 TEST_LIMIT=10 ./scripts/tist2015_pipeline.sh run
-./scripts/tist2015_pipeline.sh run
-./scripts/tist2015_pipeline.sh aggregate
-```
-
-Mọi bước train/run ghi log theo city trong `results/logs/`. Chỉ aggregate đủ
-12 city mới được diễn giải là macro average 12-city; no-OSM luôn được gắn nhãn
-ablation. Chạy baseline và tạo index tổng hợp bằng:
-
-```bash
-./scripts/run_baselines.sh audit
-./scripts/run_baselines.sh llm-zs
-./scripts/run_baselines.sh llm-mob
-./scripts/run_baselines.sh agentmove
-./scripts/run_baselines.sh hybrid
-./scripts/run_baselines.sh aggregate
-```
-
-## Dual-Evolution Distillation
-
-```bash
-.venv/bin/python -m hybrid.dual_evolution \
-  --teacher-checkpoint data/hybrid/TIST2015/Nairobi/neural_cgm/best.pt \
-  --train-csv data/hybrid/TIST2015/Nairobi/getnext/train.csv \
-  --validation-csv data/hybrid/TIST2015/Nairobi/getnext/val.csv \
-  --output results/distillation/Nairobi/correct/best.pt \
-  --order-mode correct
-```
-
-Lặp lại với `--order-mode reverse` và ít nhất 10 seed/permutation cho
-`--order-mode random`. Các hệ số `--lambda-kd`, `--lambda-trajectory`,
-`--lambda-velocity`, `--lambda-temporal` cho phép dựng lần lượt CE, KD,
-KD+Trajectory, KD+Velocity và Full ablation mà không đổi code.
-
-Selective LLM được cung cấp qua `hybrid.selective_llm.SelectiveLLMPolicy`, hỗ
-trợ entropy threshold và top-2 margin threshold; luôn so sánh với random-call
-baseline ở cùng call budget.
-
-## Cài Ollama trên Ubuntu
-
-```bash
-./scripts/install_ollama_ubuntu.sh
-```
-
-Mặc định script cài `qwen2:7b` và backbone open-weight thứ hai
-`llama3.1:8b`. OpenAI proprietary models phải dùng qua OpenAI API và không thể
-`ollama pull`.
 
 ## 0. Khởi tạo môi trường
 
@@ -901,3 +839,20 @@ Sau khi LLM-ZS đủ 12 city, chạy baseline LLM-Mob bằng cùng split và cac
 LLM-Mob được lưu riêng dưới `results/tist2015-llm-only/<model>/limit-200/llm-mob/`.
 Duration không tồn tại trong JSONL TIST2015 nên prompt ghi rõ trường này là unavailable;
 không được mô tả kết quả này là reproduction có duration.
+
+## 16. Markov/Bi-gram TIST2015 cho Table II
+
+Baseline đọc Markov logits đã tạo trong bước `prepare`, xếp hạng trên toàn bộ
+candidate space và đánh giá tối đa 200 test query đầu tiên của cùng temporal
+split. Chạy hoàn toàn trên CPU, không cần Ollama:
+
+```bash
+cd /Users/chiennguyen/Documents/Codex/Hybrid-GPS-Traj/src/AgentMove
+./scripts/run_tist2015_markov_200.sh Tokyo
+./scripts/run_tist2015_markov_200.sh pending
+./scripts/run_tist2015_markov_200.sh aggregate
+```
+
+Kiểm tra trạng thái bằng `./scripts/run_tist2015_markov_200.sh audit`. Kết quả
+tổng hợp nằm tại `results/tist2015-markov/limit-200/tist2015_markov_summary.json`;
+fragment Table II nằm trong `tist2015_markov_table2_cells.tex` cùng thư mục.
