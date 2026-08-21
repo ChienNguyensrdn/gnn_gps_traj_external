@@ -30,3 +30,12 @@ tist2015_model_slug() {
   local slug="${1//\//-}"
   printf '%s\n' "${slug//:/-}"
 }
+
+tist2015_require_python() {
+  local executable="${1:-.venv/bin/python}"
+  if [[ ! -x "$executable" ]]; then
+    echo "Missing Python environment: $executable" >&2
+    echo "Create it first with: ./scripts/setup_ubuntu.sh" >&2
+    return 2
+  fi
+}

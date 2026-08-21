@@ -33,9 +33,10 @@ fi
 tist2015_require_positive_integer QUERY_LIMIT "$QUERY_LIMIT"
 
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
+tist2015_require_python "$PYTHON_BIN"
 BASE="data/hybrid/TIST2015/$CITY/neural_cgm"
 METADATA="data/hybrid/TIST2015/$CITY/candidate_metadata.json"
-for required in "$PYTHON_BIN" "$BASE/best.pt" "$BASE/validation.jsonl" "$BASE/test.jsonl" "$METADATA"; do
+for required in "$BASE/best.pt" "$BASE/validation.jsonl" "$BASE/test.jsonl" "$METADATA"; do
   [[ -f "$required" ]] || { echo "Missing required file: $required" >&2; exit 2; }
 done
 

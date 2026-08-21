@@ -21,7 +21,7 @@ ROOT="$(tist2015_agentmove_root)"
 cd "$ROOT"
 
 tist2015_require_positive_integer QUERY_LIMIT "$QUERY_LIMIT"
-[[ -x "$PYTHON_BIN" ]] || { echo "Missing Python environment: $PYTHON_BIN" >&2; exit 2; }
+tist2015_require_python "$PYTHON_BIN"
 
 MODEL_SLUG="$(tist2015_model_slug "$OLLAMA_MODEL")"
 case "$LLM_BASELINE" in

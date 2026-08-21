@@ -25,6 +25,14 @@ else
     local slug="${1//\//-}"
     printf '%s\n' "${slug//:/-}"
   }
+  tist2015_require_python() {
+    local executable="${1:-.venv/bin/python}"
+    [[ -x "$executable" ]] || {
+      echo "Missing Python environment: $executable" >&2
+      echo "Create it first with: ./scripts/setup_ubuntu.sh" >&2
+      return 2
+    }
+  }
   echo "WARNING: $COMMON is missing; using built-in TIST2015 protocol helpers." >&2
 fi
 cd "$(tist2015_agentmove_root)"
@@ -59,14 +67,19 @@ audit() {
 }
 
 download() {
+  tist2015_require_python "$PYTHON_BIN"
   echo "Dataset download explicitly requested; preserving existing raw files."
   "$PYTHON_BIN" -m processing.download --download_mode data --data_name tist2015
 }
 
-prepare() { PYTHON_BIN="$PYTHON_BIN" ./scripts/prepare_tist2015_hybrid.sh; }
+prepare() {
+  tist2015_require_python "$PYTHON_BIN"
+  PYTHON_BIN="$PYTHON_BIN" ./scripts/prepare_tist2015_hybrid.sh
+}
 
 train() {
   local city base output
+  tist2015_require_python "$PYTHON_BIN"
   for city in "${TIST2015_CITIES[@]}"; do
     base="data/hybrid/TIST2015/$city"; output="$base/neural_cgm/best.pt"
     [[ -f "$output" && "${FORCE_TRAIN:-0}" != "1" ]] && { echo "skip trained $city"; continue; }
@@ -90,6 +103,7 @@ train() {
 }
 
 run_all() {
+  tist2015_require_python "$PYTHON_BIN"
   ./scripts/start_ollama.sh
   local city
   for city in ${CITIES:-${TIST2015_CITIES[*]}}; do
@@ -100,6 +114,7 @@ run_all() {
 }
 
 aggregate_results() {
+  tist2015_require_python "$PYTHON_BIN"
   QUERY_LIMIT="$QUERY_LIMIT" OLLAMA_MODEL="$OLLAMA_MODEL" ./scripts/complete_tist2015_table2.sh aggregate
   "$PYTHON_BIN" -m hybrid.aggregate_runs --results-root results \
     --output "results/tist2015-hybrid/$MODEL_SLUG/run_index.json"

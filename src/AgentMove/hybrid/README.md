@@ -22,6 +22,7 @@ Các lệnh dưới đây chạy từ thư mục `src/AgentMove`.
 ## Pipeline chuẩn TIST2015
 
 ```bash
+./scripts/setup_ubuntu.sh              # lần đầu trên Ubuntu
 ./scripts/tist2015_pipeline.sh audit
 ./scripts/tist2015_pipeline.sh download   # chỉ khi raw files còn thiếu
 ./scripts/tist2015_pipeline.sh prepare
