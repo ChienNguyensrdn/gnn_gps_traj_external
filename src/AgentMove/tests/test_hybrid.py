@@ -24,6 +24,11 @@ from hybrid.dual_evolution import corrupt_examples, distillation_losses
 from hybrid.neural_cgm import ModelConfig, build_model
 from hybrid.selective_llm import SelectiveLLMPolicy
 from hybrid.aggregate_runs import aggregate as aggregate_runs
+from hybrid.mobility_representation import encode_trajectory, representation_hash
+from hybrid.teacher_cache import ImmutableTeacherCache, canonical_hash
+from hybrid.sequential_belief import SequentialBelief
+from hybrid.evo_metrics import linear_cka, transition_cosine
+from hybrid.beliefmove_results import aggregate as aggregate_beliefmove, load_raw, write_raw
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -100,6 +105,48 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
             payload = aggregate_runs(root)
             self.assertEqual(payload["completed_metric_files"], 1)
             self.assertEqual(payload["runs"][0]["metrics"]["acc@1"], 0.5)
+
+    def test_representation_is_deterministic_and_uses_past_frequency_only(self):
+        events = [
+            {"poi_id": "home", "timestamp": "2026-01-05T08:00:00", "heading": 90},
+            {"poi_id": "home", "timestamp": "2026-01-05T09:00:00", "heading": 90},
+        ]
+        first = encode_trajectory(events); second = encode_trajectory(events)
+        self.assertEqual(first, second); self.assertEqual(representation_hash(first), representation_hash(second))
+        self.assertEqual(first[0].historical_frequency, 0.0)
+        self.assertEqual(first[1].historical_frequency, 1.0)
+
+    def test_teacher_cache_is_immutable_and_resumable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "teacher.jsonl"
+            cache = ImmutableTeacherCache(path, "llm", "v1")
+            cache.put("q1", {"intent": {"home": 0.8}}, canonical_hash({"query": 1}))
+            cache.put("q1", {"intent": {"home": 0.8}}, canonical_hash({"query": 1}))
+            self.assertEqual(len(path.read_text().splitlines()), 1)
+            with self.assertRaisesRegex(ValueError, "immutable"):
+                cache.put("q1", {"intent": {"home": 0.2}}, canonical_hash({"query": 1}))
+
+    def test_sequential_belief_is_normalized_and_history_changes_state(self):
+        belief = SequentialBelief([0.5, 0.5], [[0.9, 0.1], [0.2, 0.8]])
+        first = belief.step([0.8, 0.2]); second = belief.step([0.8, 0.2])
+        self.assertAlmostEqual(float(first.sum()), 1.0); self.assertAlmostEqual(float(second.sum()), 1.0)
+        self.assertFalse(np.allclose(first, second))
+
+    def test_evolution_metrics(self):
+        values = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        self.assertAlmostEqual(linear_cka(values, values), 1.0)
+        temporal = np.array([[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]])
+        self.assertAlmostEqual(transition_cosine(temporal, temporal), 1.0)
+
+    def test_raw_result_schema_and_aggregation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); repository = Path(__file__).resolve().parents[3]
+            for seed, value in [(42, 0.4), (43, 0.6)]:
+                write_raw(root / f"seed-{seed}.json", "RQ4", "E5-dual", seed, "toy", "config.json", {"acc1": value}, repository)
+            summary = aggregate_beliefmove(load_raw(root))
+            self.assertEqual(summary["raw_runs"], 2)
+            self.assertAlmostEqual(summary["groups"][0]["metrics"]["acc1"]["mean"], 0.5)
+            self.assertEqual(len(summary["groups"][0]["metrics"]["acc1"]["bootstrap_ci95"]), 2)
 
 
 class FusionAndMetricTests(unittest.TestCase):

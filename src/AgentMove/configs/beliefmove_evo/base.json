@@ -1,0 +1,11 @@
+{
+  "seed": 42,
+  "dataset": "TIST2015",
+  "cities": ["Tokyo", "Nairobi", "NewYork", "Sydney", "CapeTown", "Paris", "Beijing", "Mumbai", "SanFrancisco", "London", "SaoPaulo", "Moscow"],
+  "split": "temporal-train-validation-test",
+  "top_k": 10,
+  "top_m": 5,
+  "ollama_model": "qwen2:7b",
+  "ollama_endpoint": "http://127.0.0.1:11434/v1",
+  "llm_missing_policy": "neutral"
+}
