@@ -71,8 +71,18 @@ def build_model(config: ModelConfig):
 
 
 def _slot(values: pd.Series) -> List[int]:
-    parsed = pd.to_datetime(values, errors="coerce")
+    # Prepared GETNext files use this canonical format. Parsing it explicitly
+    # avoids Pandas/dateutil inference warnings and keeps train runs stable
+    # across Pandas versions. Only genuinely mixed external rows use fallback.
+    parsed = pd.to_datetime(values, format="%Y-%m-%d %H:%M:%S", errors="coerce", utc=True)
+    missing = parsed.isna() & values.notna()
+    if missing.any():
+        parsed.loc[missing] = pd.to_datetime(values.loc[missing], format="mixed", errors="coerce", utc=True)
     return (parsed.dt.hour * 2 + parsed.dt.minute // 30).fillna(0).astype(int).clip(0, 47).tolist()
+
+
+def _timestamp(value):
+    return pd.to_datetime(value, format="mixed", errors="coerce", utc=True)
 
 
 def build_examples(frame: pd.DataFrame, user_map: Dict[str, int], all_prefixes: bool) -> List[Tuple[List[int], List[int], int, int, int]]:
@@ -183,12 +193,12 @@ def export(args) -> None:
                 context_ids = [0]
             context_slots = []
             for row in context[-len(context_ids):]:
-                stamp = pd.to_datetime(row[0], errors="coerce")
+                stamp = _timestamp(row[0])
                 context_slots.append(int(stamp.hour * 2 + stamp.minute // 30) if not pd.isna(stamp) else 0)
             trajectory = str(query.get("metadata", {}).get("trajectory_id", str(query["query_id"]).split(":", 1)[-1]))
             encoded_user = trajectory_users.get(trajectory, "")
             user = checkpoint["user_map"].get(encoded_user, len(checkpoint["user_map"]))
-            target = pd.to_datetime(query.get("target_time"), errors="coerce")
+            target = _timestamp(query.get("target_time"))
             target_slot = int(target.hour * 2 + target.minute // 30) if not pd.isna(target) else 0
             poi = torch.tensor([context_ids]); slots = torch.tensor([context_slots]); lengths = torch.tensor([len(context_ids)])
             row = model(poi, slots, lengths, torch.tensor([user]), torch.tensor([target_slot]))[0].numpy().astype(np.float32)
