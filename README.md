@@ -1,77 +1,243 @@
 # BeliefMove-Evo
 
-> **Trạng thái:** Core research pipeline đã triển khai; full experiments cần chạy theo thứ tự phase và publication gates bên dưới.
+BeliefMove-Evo là framework dự đoán next-location kết hợp:
 
-## 1. Mục tiêu
+- Neural-CGM quantitative teacher;
+- lightweight mobility student;
+- response/representation/velocity/temporal distillation;
+- Bayesian belief và sequential belief;
+- LLM semantic evidence;
+- uncertainty-aware LLM routing.
 
-BeliefMove-Evo nghiên cứu next-location prediction bằng cách kết hợp:
+Ý tưởng: [ideas/idea.md](ideas/idea.md)
 
-- quantitative / trajectory teacher;
-- LLM mobility teacher;
-- representation-evolution distillation;
-- lightweight student;
-- Bayesian sequential belief;
-- uncertainty-aware LLM-on-demand.
+Protocol: [ideas/pipline.md](ideas/pipline.md)
 
-Chi tiết: [`ideas/idea.md`](ideas/idea.md)
-Thực nghiệm: [`ideas/pipline.md`](ideas/pipline.md)
-Kết quả sinh tự động: [`ideas/results.md`](ideas/results.md)
+Kết quả: [ideas/results.md](ideas/results.md)
 
-## 2. Repository status
-
-| Component | Status |
-|---|---|
-| Baseline reproduction | Implemented; metrics pending run |
-| Mobility representation | Implemented |
-| Quantitative teacher | Neural-CGM implemented |
-| LLM teacher cache | Immutable cache implemented |
-| Bayesian data-only | Static BBN + sequential belief implemented |
-| KD / trajectory / velocity / temporal | Implemented |
-| Order corruption | Correct/reverse/random implemented |
-| Uncertainty router | Entropy/margin implemented |
-| Evaluation | Ranking, calibration, CKA, transition metrics implemented |
-| Reproducibility scripts | Implemented |
-
-## 3. Environment
+## 1. Làm việc từ AgentMove
 
 ```bash
 cd src/AgentMove
+```
+
+Các thành phần chính:
+
+```text
+configs/beliefmove_evo/       cấu hình base, ablation, routing
+hybrid/                       model, distillation, belief, metrics
+scripts/                      setup, prepare, train, aggregate
+data/                         raw và processed datasets
+results/                      checkpoints, raw metrics, logs
+```
+
+## 2. Cài môi trường
+
+Ubuntu:
+
+```bash
+chmod +x scripts/*.sh
 ./scripts/setup_ubuntu.sh
 ./scripts/beliefmove_evo.sh environment
 ```
 
-### Check PyTorch/device
+Kiểm tra accelerator:
 
 ```bash
-.venv/bin/python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda:", torch.cuda.is_available())
-print("mps:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
-PY
+.venv/bin/python -c \
+  "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
-## 4. Dataset
+`DEVICE=auto` ưu tiên CUDA → MPS → CPU.
 
-Pipeline chính dùng Foursquare TIST2015 với 12 city canonical và temporal
-train/validation/test split độc lập theo city. Raw files nằm tại
-`src/AgentMove/data/dataset_tist2015/`. ISP-Shanghai dùng cho đối chứng bổ sung.
-
-**Không thay đổi split giữa baseline và proposed methods.**
-
-## 5. Data preparation
+## 3. Ollama
 
 ```bash
-cd src/AgentMove
+./scripts/install_ollama_ubuntu.sh
+./scripts/start_ollama.sh
+./scripts/test_ollama.sh qwen2:7b
+```
+
+Endpoint bắt buộc là `http://127.0.0.1:11434/v1`. Model mặc định là
+`qwen2:7b`; `llama3.1:8b` là backbone open-weight thứ hai.
+
+## 4. Chuẩn bị TIST2015
+
+Pipeline sử dụng đúng 12 thành phố:
+
+```text
+Tokyo Nairobi NewYork Sydney CapeTown Paris
+Beijing Mumbai SanFrancisco London SaoPaulo Moscow
+```
+
+```bash
 ./scripts/tist2015_pipeline.sh audit
 ./scripts/tist2015_pipeline.sh download  # chỉ khi audit báo raw=missing
 ./scripts/tist2015_pipeline.sh prepare
 ```
 
-## 6. Reproduce baseline
+Mỗi city giữ temporal train/validation/test split và candidate vocabulary riêng.
+Không thay preprocessing hoặc split giữa baseline và proposed method.
+
+## 5. Train quantitative teacher
 
 ```bash
-cd src/AgentMove
+./scripts/tist2015_pipeline.sh train
+```
+
+Mặc định Neural-CGM:
+
+| Tham số | Giá trị |
+|---|---:|
+| POI embedding | 64 |
+| User embedding | 32 |
+| Time embedding | 16 |
+| GRU hidden | 128 |
+| Epochs | 10 |
+| Batch size | 64 |
+| Learning rate | 0.001 |
+| Seed | 42 |
+
+Checkpoint:
+
+```text
+data/hybrid/TIST2015/<CITY>/neural_cgm/best.pt
+```
+
+## 6. Train lightweight student
+
+| Variant | Objective |
+|---|---|
+| `E0-ce` | CE only |
+| `E1-kd` | CE + response KD |
+| `E2-kd-traj` | CE + KD + trajectory |
+| `E3-kd-vel` | CE + KD + velocity |
+| `E4-layer` | CE + KD + trajectory + velocity |
+| `E5-dual` | E4 + temporal evolution |
+
+### Smoke test
+
+Luôn chạy smoke test trước full run:
+
+```bash
+CITY=Tokyo \
+VARIANT=E0-ce \
+EPOCHS=1 \
+BATCH_SIZE=256 \
+DEVICE=cuda \
+TRAIN_LIMIT=2000 \
+VALIDATION_LIMIT=500 \
+./scripts/beliefmove_evo.sh train-student
+```
+
+Smoke checkpoint nằm trong `artifacts/smoke` và không được đưa vào kết quả
+publication.
+
+### Full E0-CE
+
+```bash
+CITY=Tokyo \
+VARIANT=E0-ce \
+EPOCHS=10 \
+BATCH_SIZE=256 \
+DEVICE=cuda \
+./scripts/beliefmove_evo.sh train-student
+```
+
+Full run dùng toàn bộ prefix trajectory. Tokyo hiện có thể tạo khoảng 430.000
+training examples; batch 256 tương ứng khoảng 1.680 steps/epoch.
+
+E0-CE có `state_distillation=false`: không chạy teacher forward và không tính
+KD/trajectory/velocity/temporal loss.
+
+### Full dual-evolution
+
+```bash
+CITY=Tokyo \
+VARIANT=E5-dual \
+EPOCHS=10 \
+BATCH_SIZE=256 \
+DEVICE=cuda \
+./scripts/beliefmove_evo.sh train-student
+```
+
+E5 chạy teacher và hidden-state distillation nên chậm và tốn VRAM hơn E0. Nếu
+hết VRAM, giảm `BATCH_SIZE=128` hoặc `64`.
+
+## 7. Theo dõi training
+
+Dòng đầu mỗi run báo cấu hình thật:
+
+```json
+{
+  "device": "cuda",
+  "epochs": 10,
+  "batch_size": 256,
+  "train_examples": 430088,
+  "validation_examples": 9132,
+  "steps_per_epoch": 1681,
+  "state_distillation": false
+}
+```
+
+Mỗi epoch báo `train_loss`, validation `recall@1/5/10` và từng loss term. Model
+tốt nhất được chọn bằng:
+
+```text
+validation recall@1 + validation recall@10
+```
+
+Nếu training loss tiếp tục giảm nhưng validation recall giảm nhiều epoch liên
+tiếp, mô hình đang overfit. Không chọn epoch bằng test set.
+
+Không nên `Ctrl+C` giữa run hiện tại vì checkpoint tốt nhất được ghi khi vòng
+train kết thúc. Có thể giảm `EPOCHS` cho run sau khi validation đã plateau.
+
+Checkpoint và history:
+
+```text
+results/beliefmove-evo/artifacts/full/<CITY>/<VARIANT>/<ORDER>/seed-<SEED>/best.pt
+results/beliefmove-evo/artifacts/full/<CITY>/<VARIANT>/<ORDER>/seed-<SEED>/best.metrics.json
+```
+
+## 8. Order-corruption ablation
+
+Chạy correct, reverse và 10 random permutation seeds:
+
+```bash
+CITY=Tokyo \
+VARIANT=E5-dual \
+BATCH_SIZE=256 \
+DEVICE=cuda \
+./scripts/beliefmove_evo.sh order-ablation
+```
+
+Transform chỉ đổi thứ tự input; không đổi label, split hoặc candidate set.
+
+## 9. Teacher cache
+
+```bash
+TYPE=llm \
+INPUT=results/path/evidence_cache.jsonl \
+OUTPUT=results/beliefmove-evo/teacher-cache/llm.jsonl \
+./scripts/build_teacher_cache.sh
+```
+
+Với quantitative cache, dùng `TYPE=quantitative`. Cache là immutable và
+content-addressed: cùng key nhưng khác content sẽ bị từ chối.
+
+## 10. Bayesian belief và routing
+
+- Static Bayesian network: `hybrid.bayesian_network`.
+- Sequential update: `hybrid.sequential_belief`.
+- Entropy/margin router: `hybrid.selective_llm`.
+- Routing config: `configs/beliefmove_evo/routing.json`.
+
+Calibration và router threshold chỉ fit trên validation. Không tune test set.
+
+## 11. Baselines
+
+```bash
 ./scripts/run_baselines.sh audit
 ./scripts/run_baselines.sh llm-zs
 ./scripts/run_baselines.sh llm-mob
@@ -79,208 +245,64 @@ cd src/AgentMove
 ./scripts/run_baselines.sh hybrid
 ```
 
-Expected:
+Các job Ollama có cache. Chạy lại cùng protocol để resume; không xóa evidence
+cache của run chưa hoàn thành.
 
-```text
-results/tist2015-*/
-results/logs/baselines/
-```
+## 12. Tổng hợp kết quả
 
-## 7. Build teacher cache
-
-```bash
-cd src/AgentMove
-./scripts/tist2015_pipeline.sh train
-```
+Full student run tự ghi raw JSON gồm RQ, experiment, seed, Git commit, dataset
+hash, config và metrics.
 
 ```bash
-TYPE=llm INPUT=results/path/evidence_cache.jsonl \
-  ./scripts/build_teacher_cache.sh
-```
-
-Teacher outputs phải được cache để ablation reproducible.
-
-## 8. Train Bayesian data-only model
-
-Data-only Bayesian inference dùng `hybrid.bayesian_network`; sequential update
-dùng `hybrid.sequential_belief`. Không gọi LLM trong Bayesian-only experiment.
-
-## 9. Train lightweight student
-
-```bash
-cd src/AgentMove
-CITY=Tokyo VARIANT=E0-ce ./scripts/beliefmove_evo.sh train-student
-```
-
-Mặc định là full run: 10 epochs, batch 64, toàn bộ prefix training và validation.
-Trên Ubuntu, `DEVICE=auto` ưu tiên CUDA rồi mới fallback CPU. Smoke test nhanh,
-được ghi vào thư mục `artifacts/smoke` và không đưa vào bảng publication:
-
-```bash
-CITY=Tokyo VARIANT=E0-ce EPOCHS=1 BATCH_SIZE=256 DEVICE=cuda \
-TRAIN_LIMIT=2000 VALIDATION_LIMIT=500 \
-  ./scripts/beliefmove_evo.sh train-student
-```
-
-Xem dòng cấu hình đầu run để kiểm tra `device`, `train_examples` và
-`steps_per_epoch`. Nếu máy không có CUDA, dùng `DEVICE=cpu` và giảm limits.
-
-```bash
-CITY=Tokyo VARIANT=E1-kd ./scripts/beliefmove_evo.sh train-student
-```
-
-```bash
-CITY=Tokyo VARIANT=E4-layer ./scripts/beliefmove_evo.sh train-student
-```
-
-```bash
-CITY=Tokyo VARIANT=E5-dual ./scripts/beliefmove_evo.sh train-student
-CITY=Tokyo VARIANT=E5-dual ./scripts/beliefmove_evo.sh order-ablation
-```
-
-## 10. Sequential belief
-
-`SequentialBelief.step()` thực hiện transition prediction rồi Bayesian evidence
-update; mọi bước kiểm tra normalization và NaN.
-
-## 11. Uncertainty-aware inference
-
-`SelectiveLLMPolicy` hỗ trợ entropy và top-2 margin. Threshold phải fit trên
-validation; config tại `configs/beliefmove_evo/routing.json`.
-
-Router threshold phải được chọn trên validation set.
-
-## 12. Run RQ experiments
-
-Các phase chính:
-
-```bash
-cd src/AgentMove
-./scripts/beliefmove_evo.sh audit
-./scripts/beliefmove_evo.sh environment
-./scripts/beliefmove_evo.sh train-teacher
-CITY=Tokyo VARIANT=E5-dual ./scripts/beliefmove_evo.sh train-student
-./scripts/beliefmove_evo.sh aggregate
-```
-
-## 13. Aggregate results
-
-```bash
-cd src/AgentMove
 ./scripts/aggregate_beliefmove_results.sh
 ```
 
-Script đọc `results/beliefmove-evo/raw/**/*.json`, kiểm tra schema/provenance,
-group theo RQ/experiment/dataset, tính mean/std và ghi đồng thời
-`results/beliefmove-evo/aggregated/summary.json` và `ideas/results.md`. Nếu chưa
-có raw metrics, file kết quả ghi rõ chưa có dữ liệu và không tạo số giả.
+Output:
 
-## 14. Tests
+```text
+results/beliefmove-evo/aggregated/summary.json
+ideas/results.md
+```
+
+Aggregator tính mean, standard deviation và deterministic bootstrap 95% CI.
+Nếu chưa có raw result, file kết quả ghi rõ chưa có dữ liệu; không tạo số giả.
+
+## 13. Test
 
 ```bash
-cd src/AgentMove
 .venv/bin/python -m unittest discover -s tests -v
 # hoặc
 ./scripts/beliefmove_evo.sh test
 ```
 
-Tests tối thiểu:
+Test bao gồm timestamp parsing, preprocessing/split, representation leakage,
+teacher cache, Bayesian normalization, distillation, routing và aggregation.
 
-- preprocessing;
-- split integrity;
-- teacher cache;
-- belief normalization;
-- uncertainty;
-- metrics.
+## 14. Publication gates
 
-## 15. Reproducibility
+- Main TIST2015 result phải đủ đúng 12 city.
+- Mỗi city có candidate space, checkpoint, calibrator và cache riêng.
+- Main result dùng Neural-CGM; Markov chỉ dùng smoke/baseline.
+- Giữ cùng top-k, top-m, model, split, seed protocol và limits giữa các city.
+- Chỉ ghi “12-city macro average” khi đủ cả 12 city.
+- Geographic bias là population variance của city Acc@1.
+- OSM coverage dưới 90% phải gắn nhãn `no-OSM`, không gọi là full model.
+- Không dùng smoke/limited run cho publication.
+- Không xem LLM teacher là ground truth.
+- Không claim module hữu ích nếu ablation/corruption không hỗ trợ.
 
-Mỗi run phải log:
-
-- seed;
-- git commit;
-- dataset hash/version;
-- config path;
-- Python version;
-- Torch version;
-- device;
-- raw metrics.
-
-## 16. Metrics
-
-Prediction:
-
-- Acc@1;
-- Acc@5;
-- Acc@10;
-- MRR.
-
-Probabilistic quality:
-
-- NLL;
-- Brier Score;
-- ECE.
-
-Efficiency:
-
-- p50 latency;
-- p95 latency;
-- peak memory;
-- token/query;
-- LLMCallRate.
-
-Representation analysis:
-
-- CKA;
-- transition cosine similarity.
-
-## 17. Important rules
-
-1. Không tune test set.
-2. Không xem LLM teacher là ground truth.
-3. Không gọi LLM mọi query trong adaptive-routing experiment.
-4. Không thay preprocessing giữa baseline và proposed.
-5. Không điền fabricated results.
-6. Không claim semantic module hữu ích nếu corruption/ablation không hỗ trợ.
-7. Không claim foundation-model gain nếu chưa có direct comparison.
-
-## 18. Results
-
-Xem [`ideas/results.md`](ideas/results.md).
-
-## 19. Roadmap
+## 15. Trình tự khuyến nghị
 
 ```text
-Baseline
-→ representation
-→ teacher cache
-→ BN data-only
-→ LLM distillation
-→ representation evolution
+environment
+→ audit/download/prepare
+→ quantitative teacher
+→ Tokyo smoke test
+→ E0 baseline
+→ E1–E5 ablation
 → order corruption
-→ sequential belief
+→ Bayesian/sequential belief
 → uncertainty routing
-→ semantic verification
-→ calibration
-→ efficiency
-→ robustness
+→ multi-city run
+→ aggregate
 ```
-
-## 20. Citation
-
-```bibtex
-@article{beliefmove_evo_2026,
-  title   = {TODO},
-  author  = {TODO},
-  journal = {TODO},
-  year    = {2026}
-}
-```
-
-## 21. License
-
-TODO
-
-## 22. Contact
-
-TODO
