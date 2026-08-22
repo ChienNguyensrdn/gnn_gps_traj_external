@@ -112,6 +112,19 @@ cd src/AgentMove
 CITY=Tokyo VARIANT=E0-ce ./scripts/beliefmove_evo.sh train-student
 ```
 
+Mặc định là full run: 10 epochs, batch 64, toàn bộ prefix training và validation.
+Trên Ubuntu, `DEVICE=auto` ưu tiên CUDA rồi mới fallback CPU. Smoke test nhanh,
+được ghi vào thư mục `artifacts/smoke` và không đưa vào bảng publication:
+
+```bash
+CITY=Tokyo VARIANT=E0-ce EPOCHS=1 BATCH_SIZE=256 DEVICE=cuda \
+TRAIN_LIMIT=2000 VALIDATION_LIMIT=500 \
+  ./scripts/beliefmove_evo.sh train-student
+```
+
+Xem dòng cấu hình đầu run để kiểm tra `device`, `train_examples` và
+`steps_per_epoch`. Nếu máy không có CUDA, dùng `DEVICE=cpu` và giảm limits.
+
 ```bash
 CITY=Tokyo VARIANT=E1-kd ./scripts/beliefmove_evo.sh train-student
 ```

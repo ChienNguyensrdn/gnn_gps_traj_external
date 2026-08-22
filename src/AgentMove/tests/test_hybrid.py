@@ -20,7 +20,7 @@ from hybrid.enrich_osm import normalize_address
 from hybrid.schemas import Candidate, Prediction, Query
 from hybrid.llm_only import _parse as parse_llm_only
 from hybrid.tist2015_table2_aggregate import aggregate as aggregate_tist2015_table2
-from hybrid.dual_evolution import corrupt_examples, distillation_losses
+from hybrid.dual_evolution import _device, _limit, corrupt_examples, distillation_losses
 from hybrid.neural_cgm import ModelConfig, _slot, build_model
 from hybrid.selective_llm import SelectiveLLMPolicy
 from hybrid.aggregate_runs import aggregate as aggregate_runs
@@ -72,6 +72,17 @@ class CalibrationTests(unittest.TestCase):
 
 
 class EvolutionAndSelectiveTests(unittest.TestCase):
+    def test_deterministic_smoke_limit(self):
+        rows = list(range(100))
+        self.assertEqual(_limit(rows, 10, 42), _limit(rows, 10, 42))
+        self.assertEqual(len(_limit(rows, 10, 42)), 10)
+
+    def test_auto_device_selects_an_available_backend(self):
+        import torch
+        selected = _device(torch, "auto")
+        expected = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+        self.assertEqual(selected.type, expected)
+
     def test_time_slot_parser_handles_canonical_and_mixed_formats_without_loss(self):
         values = pd.Series(["2012-04-14 16:45:31", "2012-04-15T10:45:53Z", None])
         self.assertEqual(_slot(values), [33, 21, 0])

@@ -45,11 +45,23 @@ train_student() {
     E3-kd-vel) weights=(1 0 1 0) ;; E4-layer) weights=(1 1 1 0) ;; E5-dual) weights=(1 1 1 1) ;;
     *) echo "Unknown VARIANT=$variant" >&2; exit 2 ;;
   esac
-  local target="$OUT/artifacts/$CITY/$variant/$order/seed-$SEED/best.pt"
+  local limited=0 run_scope="full"
+  local extra_args=()
+  if [[ -n "${TRAIN_LIMIT:-}" ]]; then extra_args+=(--train-limit "$TRAIN_LIMIT"); limited=1; fi
+  if [[ -n "${VALIDATION_LIMIT:-}" ]]; then extra_args+=(--validation-limit "$VALIDATION_LIMIT"); limited=1; fi
+  if [[ "$limited" == "1" ]]; then run_scope="${RUN_TAG:-smoke}"; fi
+  local target="$OUT/artifacts/$run_scope/$CITY/$variant/$order/seed-$SEED/best.pt"
   "$PYTHON_BIN" -m hybrid.dual_evolution --teacher-checkpoint "$teacher" \
     --train-csv "$BASE/getnext/train.csv" --validation-csv "$BASE/getnext/val.csv" --output "$target" \
-    --seed "$SEED" --order-mode "$order" --lambda-kd "${weights[0]}" \
-    --lambda-trajectory "${weights[1]}" --lambda-velocity "${weights[2]}" --lambda-temporal "${weights[3]}"
+    --seed "$SEED" --order-mode "$order" --epochs "${EPOCHS:-10}" \
+    --batch-size "${BATCH_SIZE:-64}" --device "${DEVICE:-auto}" \
+    --learning-rate "${LEARNING_RATE:-0.001}" --lambda-kd "${weights[0]}" \
+    --lambda-trajectory "${weights[1]}" --lambda-velocity "${weights[2]}" --lambda-temporal "${weights[3]}" \
+    "${extra_args[@]}"
+  if [[ "$limited" == "1" ]]; then
+    echo "smoke_result=$target (not added to publication raw results)"
+    return 0
+  fi
   local rq="RQ4" rq_dir="rq4"
   if [[ "$order" != "correct" ]]; then rq="RQ5"; rq_dir="rq5"; fi
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "${target%.pt}.metrics.json" \

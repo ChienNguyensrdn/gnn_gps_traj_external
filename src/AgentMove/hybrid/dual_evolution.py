@@ -68,7 +68,22 @@ def distillation_losses(student, teacher, labels, projections, temperature: floa
 
 
 def _device(torch, name: str):
-    return torch.device("mps" if name == "auto" and torch.backends.mps.is_available() else ("cpu" if name == "auto" else name))
+    if name != "auto":
+        return torch.device(name)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _limit(examples, limit: int | None, seed: int):
+    if limit is None or limit >= len(examples):
+        return examples
+    if limit <= 0:
+        raise ValueError("example limits must be positive")
+    indices = sorted(random.Random(seed).sample(range(len(examples)), limit))
+    return [examples[index] for index in indices]
 
 
 def train(args) -> Dict[str, float]:
@@ -93,10 +108,26 @@ def train(args) -> Dict[str, float]:
     frame_train = pd.read_csv(args.train_csv)
     frame_validation = pd.read_csv(args.validation_csv)
     user_map = teacher_checkpoint["user_map"]
-    train_examples = corrupt_examples(build_examples(frame_train, user_map, True), args.order_mode, args.seed)
-    validation_examples = corrupt_examples(build_examples(frame_validation, user_map, False), args.order_mode, args.seed)
-    optimizer = torch.optim.AdamW(list(student.parameters()) + list(projections.parameters()), lr=args.learning_rate, weight_decay=1e-4)
+    train_examples = _limit(
+        corrupt_examples(build_examples(frame_train, user_map, True), args.order_mode, args.seed),
+        args.train_limit, args.seed,
+    )
+    validation_examples = _limit(
+        corrupt_examples(build_examples(frame_validation, user_map, False), args.order_mode, args.seed),
+        args.validation_limit, args.seed,
+    )
     weights = {name: getattr(args, f"lambda_{name}") for name in ("kd", "trajectory", "velocity", "temporal")}
+    state_distillation = any(weights[name] > 0 for name in ("trajectory", "velocity", "temporal"))
+    optimizer_parameters = list(student.parameters())
+    if state_distillation:
+        optimizer_parameters += list(projections.parameters())
+    optimizer = torch.optim.AdamW(optimizer_parameters, lr=args.learning_rate, weight_decay=1e-4)
+    print(json.dumps({
+        "device": str(device), "epochs": args.epochs, "batch_size": args.batch_size,
+        "train_examples": len(train_examples), "validation_examples": len(validation_examples),
+        "steps_per_epoch": (len(train_examples) + args.batch_size - 1) // args.batch_size,
+        "weights": weights, "state_distillation": state_distillation,
+    }), flush=True)
     best_score, best_state, best_metrics = -1.0, None, {}
     history = []
     for epoch in range(1, args.epochs + 1):
@@ -104,10 +135,25 @@ def train(args) -> Dict[str, float]:
         for batch in _batches(train_examples, args.batch_size, True, args.seed + epoch):
             poi, slots, lengths, users, targets, labels = [value.to(device) for value in batch]
             optimizer.zero_grad(set_to_none=True)
-            with torch.no_grad():
-                teacher_output = teacher(poi, slots, lengths, users, targets, return_states=True)
-            student_output = student(poi, slots, lengths, users, targets, return_states=True)
-            terms = distillation_losses(student_output, teacher_output, labels, projections, args.temperature)
+            if state_distillation:
+                with torch.no_grad():
+                    teacher_output = teacher(poi, slots, lengths, users, targets, return_states=True)
+                student_output = student(poi, slots, lengths, users, targets, return_states=True)
+                terms = distillation_losses(student_output, teacher_output, labels, projections, args.temperature)
+            else:
+                functional = torch.nn.functional
+                student_logits = student(poi, slots, lengths, users, targets)
+                ce = functional.cross_entropy(student_logits, labels)
+                zero = ce * 0.0
+                terms = {"ce": ce, "kd": zero, "trajectory": zero, "velocity": zero, "temporal": zero}
+                if weights["kd"] > 0:
+                    with torch.no_grad():
+                        teacher_logits = teacher(poi, slots, lengths, users, targets)
+                    terms["kd"] = functional.kl_div(
+                        functional.log_softmax(student_logits / args.temperature, dim=-1),
+                        functional.softmax(teacher_logits / args.temperature, dim=-1),
+                        reduction="batchmean",
+                    ) * args.temperature**2
             loss = terms["ce"] + sum(weights[name] * terms[name] for name in weights)
             loss.backward(); torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0); optimizer.step()
             epoch_losses.append({name: float(value.detach().cpu()) for name, value in terms.items()} | {"total": float(loss.detach().cpu())})
@@ -146,6 +192,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lambda-velocity", type=float, default=1.0); parser.add_argument("--lambda-temporal", type=float, default=1.0)
     parser.add_argument("--order-mode", choices=["correct", "reverse", "random"], default="correct")
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--train-limit", type=int, help="Deterministic example limit for smoke tests only")
+    parser.add_argument("--validation-limit", type=int, help="Deterministic validation limit for smoke tests only")
     return parser
 
 
