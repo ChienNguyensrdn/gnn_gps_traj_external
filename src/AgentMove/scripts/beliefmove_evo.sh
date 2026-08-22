@@ -85,10 +85,26 @@ aggregate_results() {
   "$PYTHON_BIN" -m hybrid.beliefmove_results --input "$OUT/raw" --output-dir "$OUT/aggregated" --results-md ../../ideas/results.md
 }
 
+evaluate_student() {
+  require_python
+  local variant="${VARIANT:-E5-dual}" order="${ORDER_MODE:-correct}"
+  local checkpoint="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/best.pt"
+  local metrics="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/test.metrics.json"
+  [[ -f "$checkpoint" ]] || { echo "Missing student checkpoint: $checkpoint" >&2; exit 2; }
+  "$PYTHON_BIN" -m hybrid.evaluate_student --checkpoint "$checkpoint" --test-csv "$BASE/getnext/test.csv" \
+    --output "$metrics" --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED"
+  "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "$metrics" \
+    --output "$OUT/raw/rq4-test/$CITY/$variant-$order-seed-$SEED.json" \
+    --rq RQ4 --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
+    --config configs/beliefmove_evo/evolution_ablation.json --repository ../.. --evaluation-split test \
+    --dataset-files "$BASE/getnext/train.csv" "$BASE/getnext/val.csv" "$BASE/getnext/test.csv"
+}
+
 case "$ACTION" in
   audit) audit ;; environment) environment ;; prepare) ./scripts/tist2015_pipeline.sh prepare ;;
   train-teacher) ./scripts/tist2015_pipeline.sh train ;; train-student) train_student ;;
+  evaluate-student) evaluate_student ;;
   order-ablation) order_ablation ;; aggregate) aggregate_results ;;
   test) require_python; "$PYTHON_BIN" -m unittest discover -s tests -v ;;
-  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|order-ablation|aggregate|test>" >&2; exit 2 ;;
+  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|evaluate-student|order-ablation|aggregate|test>" >&2; exit 2 ;;
 esac

@@ -29,6 +29,7 @@ from hybrid.teacher_cache import ImmutableTeacherCache, canonical_hash
 from hybrid.sequential_belief import SequentialBelief
 from hybrid.evo_metrics import linear_cka, transition_cosine
 from hybrid.beliefmove_results import aggregate as aggregate_beliefmove, load_raw, write_raw
+from hybrid.evaluate_student import summarize_logits
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -170,6 +171,26 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
             write_raw(root / "one.json", "RQ4", "E1-kd", 42, "toy", "config.json", {"acc1": 0.5}, repository)
             metric = aggregate_beliefmove(load_raw(root))["groups"][0]["metrics"]["acc1"]
             self.assertIsNone(metric["std"]); self.assertIsNone(metric["bootstrap_ci95"])
+
+    def test_legacy_student_result_joins_validation_split(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); repository = Path(__file__).resolve().parents[3]
+            write_raw(root / "seed-42.json", "RQ4", "E1-kd", 42, "toy", "config.json",
+                      {"recall@1": 0.4}, repository)
+            write_raw(root / "seed-43.json", "RQ4", "E1-kd", 43, "toy", "config.json",
+                      {"recall@1": 0.6}, repository, {"evaluation_split": "validation"})
+            groups = aggregate_beliefmove(load_raw(root))["groups"]
+            self.assertEqual(len(groups), 1)
+            self.assertEqual(groups[0]["evaluation_split"], "validation")
+            self.assertEqual(groups[0]["seeds"], [42, 43])
+
+    def test_student_test_metrics(self):
+        logits = np.array([[3.0, 1.0, 0.0], [0.0, 2.0, 1.0]])
+        metrics = summarize_logits(logits, np.array([0, 2]))
+        self.assertEqual(metrics["queries"], 2)
+        self.assertEqual(metrics["recall@1"], 0.5)
+        self.assertEqual(metrics["recall@5"], 1.0)
+        self.assertGreater(metrics["nll"], 0.0)
 
 
 class FusionAndMetricTests(unittest.TestCase):

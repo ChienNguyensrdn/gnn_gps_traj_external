@@ -214,6 +214,22 @@ DEVICE=cuda \
 
 Transform chỉ đổi thứ tự input; không đổi label, split hoặc candidate set.
 
+### Evaluate best checkpoint trên test split
+
+Chỉ evaluate sau khi variant/epoch đã được chọn bằng validation:
+
+```bash
+for seed in 42 43 44; do
+  for variant in E0-ce E1-kd E5-dual; do
+    CITY=Tokyo SEED="$seed" VARIANT="$variant" BATCH_SIZE=256 DEVICE=cuda \
+      ./scripts/beliefmove_evo.sh evaluate-student
+  done
+done
+```
+
+Test evaluator ghi Recall@1/5/10, MRR, NLL, Brier và ECE vào raw result có
+`evaluation_split=test`. Không dùng test metrics để đổi hyperparameter.
+
 ## 9. Teacher cache
 
 ```bash

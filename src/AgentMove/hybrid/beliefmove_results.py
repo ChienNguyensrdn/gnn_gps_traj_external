@@ -58,7 +58,9 @@ def load_raw(root: Path) -> list[dict[str, Any]]:
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        split = row.get("evaluation_split", "validation-legacy")
+        # Student raw records created before the split field was introduced
+        # were produced by the validation loop in dual_evolution.py.
+        split = row.get("evaluation_split", "validation")
         groups.setdefault((row["rq"], row["experiment"], row["dataset"], split), []).append(row)
     output = []
     for (rq, experiment, dataset, split), items in sorted(groups.items()):
