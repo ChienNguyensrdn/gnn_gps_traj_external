@@ -14,10 +14,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, required=True); parser.add_argument("--dataset", required=True)
     parser.add_argument("--config", required=True); parser.add_argument("--repository", type=Path, default=Path("../.."))
     parser.add_argument("--dataset-files", type=Path, nargs="*", default=[])
+    parser.add_argument("--evaluation-split", choices=["train", "validation", "test"], default="validation")
     args = parser.parse_args(); payload = json.loads(args.metrics.read_text(encoding="utf-8"))
     metrics = payload.get("best", payload.get("metrics", payload))
     metrics = {key: value for key, value in metrics.items() if isinstance(value, (int, float)) and not isinstance(value, bool)}
-    extra = {"source_metrics": str(args.metrics.resolve())}
+    extra = {"source_metrics": str(args.metrics.resolve()), "evaluation_split": args.evaluation_split}
     if args.dataset_files:
         missing = [str(path) for path in args.dataset_files if not path.exists()]
         if missing: raise FileNotFoundError(f"dataset provenance files missing: {missing}")

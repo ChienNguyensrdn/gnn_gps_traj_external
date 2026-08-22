@@ -14,6 +14,11 @@ import numpy as np
 
 
 REQUIRED = {"rq", "experiment", "seed", "git_commit", "dataset", "config", "metrics"}
+DISPLAY_METRICS = {
+    "acc1", "acc5", "acc10", "acc@1", "acc@5", "acc@10",
+    "recall@1", "recall@5", "recall@10", "mrr", "ece", "nll", "brier",
+    "cka", "transition_cosine", "llm_call_rate", "p50_latency", "p95_latency",
+}
 
 
 def git_commit(root: Path) -> str:
@@ -51,10 +56,12 @@ def load_raw(root: Path) -> list[dict[str, Any]]:
 
 
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for row in rows: groups.setdefault((row["rq"], row["experiment"], row["dataset"]), []).append(row)
+    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        split = row.get("evaluation_split", "validation-legacy")
+        groups.setdefault((row["rq"], row["experiment"], row["dataset"], split), []).append(row)
     output = []
-    for (rq, experiment, dataset), items in sorted(groups.items()):
+    for (rq, experiment, dataset, split), items in sorted(groups.items()):
         names = sorted(set.intersection(*(set(item["metrics"]) for item in items))) if items else []
         metrics = {}
         for name in names:
@@ -66,10 +73,12 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     samples = rng.choice(array, size=(10000, len(array)), replace=True).mean(axis=1)
                     ci95 = [float(np.quantile(samples, 0.025)), float(np.quantile(samples, 0.975))]
                 else:
-                    ci95 = [float(array[0]), float(array[0])]
-                metrics[name] = {"mean": statistics.fmean(values), "std": statistics.stdev(values) if len(values) > 1 else 0.0,
+                    ci95 = None
+                metrics[name] = {"mean": statistics.fmean(values), "std": statistics.stdev(values) if len(values) > 1 else None,
                                  "bootstrap_ci95": ci95}
-        output.append({"rq": rq, "experiment": experiment, "dataset": dataset, "seeds": sorted(item["seed"] for item in items), "metrics": metrics})
+        seeds = sorted(set(item["seed"] for item in items))
+        output.append({"rq": rq, "experiment": experiment, "dataset": dataset, "evaluation_split": split,
+                       "seeds": seeds, "publication_ready": split == "test" and len(seeds) >= 3, "metrics": metrics})
     return {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_runs": len(rows), "groups": output}
 
 
@@ -81,13 +90,25 @@ def render_markdown(summary: dict[str, Any]) -> str:
     current = None
     for group in summary["groups"]:
         if group["rq"] != current:
-            current = group["rq"]; lines += [f"## {current}", "", "| Experiment | Dataset | Seeds | Metrics mean ± std |", "|---|---|---|---|"]
-        cells = ", ".join(
-            f"{name}={value['mean']:.6f} ± {value['std']:.6f} (95% CI {value['bootstrap_ci95'][0]:.6f}–{value['bootstrap_ci95'][1]:.6f})"
-            for name, value in group["metrics"].items()
-        ) or "TBD"
-        lines.append(f"| {group['experiment']} | {group['dataset']} | {', '.join(map(str, group['seeds']))} | {cells} |")
-    lines += ["", "## Publication gate", "", "Các RQ thiếu đủ seed/raw metrics giữ trạng thái chưa hoàn thành; không suy diễn số liệu còn thiếu.", ""]
+            current = group["rq"]; lines += [f"## {current}", "", "| Experiment | Dataset | Split | Seeds | Evaluation metrics | Gate |", "|---|---|---|---|---|---|"]
+        rendered = []
+        for name, value in group["metrics"].items():
+            if name not in DISPLAY_METRICS:
+                continue
+            if value["bootstrap_ci95"] is None:
+                rendered.append(f"{name}={value['mean']:.6f} (std/CI N/A; cần ≥2 seeds)")
+            else:
+                rendered.append(
+                    f"{name}={value['mean']:.6f} ± {value['std']:.6f} "
+                    f"(95% CI {value['bootstrap_ci95'][0]:.6f}–{value['bootstrap_ci95'][1]:.6f})"
+                )
+        cells = ", ".join(rendered) or "TBD"
+        gate = "ready" if group["publication_ready"] else "not ready"
+        lines.append(
+            f"| {group['experiment']} | {group['dataset']} | {group['evaluation_split']} | "
+            f"{', '.join(map(str, group['seeds']))} | {cells} | {gate} |"
+        )
+    lines += ["", "## Publication gate", "", "Một group chỉ `ready` khi là test split và có ít nhất 3 seeds. Validation dùng chọn checkpoint/hyperparameter, không phải kết quả test cuối cùng.", ""]
     return "\n".join(lines)
 
 

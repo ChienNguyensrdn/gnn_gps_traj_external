@@ -162,6 +162,14 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
             self.assertEqual(summary["raw_runs"], 2)
             self.assertAlmostEqual(summary["groups"][0]["metrics"]["acc1"]["mean"], 0.5)
             self.assertEqual(len(summary["groups"][0]["metrics"]["acc1"]["bootstrap_ci95"]), 2)
+            self.assertFalse(summary["groups"][0]["publication_ready"])
+
+    def test_single_seed_does_not_report_degenerate_uncertainty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); repository = Path(__file__).resolve().parents[3]
+            write_raw(root / "one.json", "RQ4", "E1-kd", 42, "toy", "config.json", {"acc1": 0.5}, repository)
+            metric = aggregate_beliefmove(load_raw(root))["groups"][0]["metrics"]["acc1"]
+            self.assertIsNone(metric["std"]); self.assertIsNone(metric["bootstrap_ci95"])
 
 
 class FusionAndMetricTests(unittest.TestCase):
