@@ -24,7 +24,7 @@ run_city() {
 }
 case "${1:-pending}" in
   pending) for city in "${CITIES[@]}"; do run_city "$city"; done ;;
-  aggregate) "$PYTHON_BIN" -m hybrid.getnext_baseline aggregate --root "results/getnext/TIST2015/limit-$LIMIT" --cities "${CITIES[@]}" --output "results/getnext/TIST2015/limit-$LIMIT/macro_average.json" ;;
+  aggregate) QUERY_LIMIT="$LIMIT" ./scripts/aggregate_getnext_results.sh aggregate ;;
   audit) for city in "${CITIES[@]}"; do [[ -f "results/getnext/TIST2015/limit-$LIMIT/$city/metrics.json" ]] && echo "done $city" || echo "pending $city"; done ;;
   *) run_city "$1" ;;
 esac
