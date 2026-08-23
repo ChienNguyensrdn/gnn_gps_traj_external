@@ -88,16 +88,24 @@ aggregate_results() {
 evaluate_student() {
   require_python
   local variant="${VARIANT:-E5-dual}" order="${ORDER_MODE:-correct}"
+  local rq="${EVALUATION_RQ:-}" rq_dir
+  if [[ -z "$rq" ]]; then
+    [[ "$order" == "correct" ]] && rq="RQ4" || rq="RQ5"
+  fi
+  [[ "$rq" == "RQ4" || "$rq" == "RQ5" ]] || { echo "EVALUATION_RQ must be RQ4 or RQ5" >&2; exit 2; }
+  [[ "$rq" == "RQ4" ]] && rq_dir="rq4-test" || rq_dir="rq5-test"
   local checkpoint="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/best.pt"
   local metrics="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/test.metrics.json"
   [[ -f "$checkpoint" ]] || { echo "Missing student checkpoint: $checkpoint" >&2; exit 2; }
   "$PYTHON_BIN" -m hybrid.evaluate_student --checkpoint "$checkpoint" --test-csv "$BASE/getnext/test.csv" \
-    --output "$metrics" --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED"
+    --output "$metrics" --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED" \
+    --order-mode "$order"
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "$metrics" \
-    --output "$OUT/raw/rq4-test/$CITY/$variant-$order-seed-$SEED.json" \
-    --rq RQ4 --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
+    --output "$OUT/raw/$rq_dir/$CITY/$variant-$order-seed-$SEED.json" \
+    --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
     --config configs/beliefmove_evo/evolution_ablation.json --repository ../.. --evaluation-split test \
     --dataset-files "$BASE/getnext/train.csv" "$BASE/getnext/val.csv" "$BASE/getnext/test.csv"
+  echo "evaluation=$rq order=$order metrics=$metrics"
 }
 
 case "$ACTION" in

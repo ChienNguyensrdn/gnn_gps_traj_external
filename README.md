@@ -230,6 +230,31 @@ done
 Test evaluator ghi Recall@1/5/10, MRR, NLL, Brier và ECE vào raw result có
 `evaluation_split=test`. Không dùng test metrics để đổi hyperparameter.
 
+Đánh giá RQ5 sau khi đã chọn checkpoint bằng validation. Evaluator kiểm tra
+`ORDER_MODE` khớp metadata checkpoint và áp dụng cùng phép biến đổi lên test
+input. Reverse/random tự động được ghi vào `rq5-test`:
+
+```bash
+for seed in 42 43 44; do
+  CITY=Tokyo SEED="$seed" VARIANT=E5-dual ORDER_MODE=reverse \
+  BATCH_SIZE=256 DEVICE=cuda ./scripts/beliefmove_evo.sh evaluate-student
+done
+
+for seed in 42 43 44 45 46 47 48 49 50 51; do
+  CITY=Tokyo SEED="$seed" VARIANT=E5-dual ORDER_MODE=random \
+  BATCH_SIZE=256 DEVICE=cuda ./scripts/beliefmove_evo.sh evaluate-student
+done
+```
+
+Để ghi nhóm `correct` làm đối chứng riêng trong RQ5, dùng `EVALUATION_RQ=RQ5`:
+
+```bash
+for seed in 42 43 44; do
+  CITY=Tokyo SEED="$seed" VARIANT=E5-dual ORDER_MODE=correct EVALUATION_RQ=RQ5 \
+  BATCH_SIZE=256 DEVICE=cuda ./scripts/beliefmove_evo.sh evaluate-student
+done
+```
+
 ## 9. Teacher cache
 
 ```bash

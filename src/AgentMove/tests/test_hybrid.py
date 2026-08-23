@@ -29,7 +29,7 @@ from hybrid.teacher_cache import ImmutableTeacherCache, canonical_hash
 from hybrid.sequential_belief import SequentialBelief
 from hybrid.evo_metrics import linear_cka, transition_cosine
 from hybrid.beliefmove_results import aggregate as aggregate_beliefmove, load_raw, write_raw
-from hybrid.evaluate_student import summarize_logits
+from hybrid.evaluate_student import resolve_order_mode, summarize_logits
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -191,6 +191,16 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
         self.assertEqual(metrics["recall@1"], 0.5)
         self.assertEqual(metrics["recall@5"], 1.0)
         self.assertGreater(metrics["nll"], 0.0)
+
+    def test_student_evaluation_uses_checkpoint_order(self):
+        reverse = {"distillation": {"order_mode": "reverse"}}
+        self.assertEqual(resolve_order_mode(reverse, "auto"), "reverse")
+        self.assertEqual(resolve_order_mode(reverse, "reverse"), "reverse")
+        with self.assertRaisesRegex(ValueError, "does not match checkpoint"):
+            resolve_order_mode(reverse, "random")
+
+    def test_legacy_student_checkpoint_defaults_to_correct_order(self):
+        self.assertEqual(resolve_order_mode({}, "auto"), "correct")
 
 
 class FusionAndMetricTests(unittest.TestCase):
