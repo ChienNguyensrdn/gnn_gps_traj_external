@@ -96,10 +96,11 @@ evaluate_student() {
   [[ "$rq" == "RQ4" ]] && rq_dir="rq4-test" || rq_dir="rq5-test"
   local checkpoint="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/best.pt"
   local metrics="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/test.metrics.json"
+  local predictions="$OUT/artifacts/full/$CITY/$variant/$order/seed-$SEED/test.predictions.npz"
   [[ -f "$checkpoint" ]] || { echo "Missing student checkpoint: $checkpoint" >&2; exit 2; }
   "$PYTHON_BIN" -m hybrid.evaluate_student --checkpoint "$checkpoint" --test-csv "$BASE/getnext/test.csv" \
     --output "$metrics" --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED" \
-    --order-mode "$order"
+    --order-mode "$order" --predictions-output "$predictions"
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "$metrics" \
     --output "$OUT/raw/$rq_dir/$CITY/$variant-$order-seed-$SEED.json" \
     --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
@@ -108,11 +109,22 @@ evaluate_student() {
   echo "evaluation=$rq order=$order metrics=$metrics"
 }
 
+rq5_significance() {
+  require_python
+  local variant="${VARIANT:-E5-dual}"
+  "$PYTHON_BIN" -m hybrid.paired_order_test \
+    --artifacts-root "$OUT/artifacts/full/$CITY/$variant" \
+    --seeds ${PAIRED_SEEDS:-42 43 44} --comparisons reverse random \
+    --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" --seed "${SIGNIFICANCE_SEED:-42}" \
+    --output "$OUT/aggregated/rq5_paired_significance.json" \
+    --markdown ../../ideas/result_rq5_significance.md
+}
+
 case "$ACTION" in
   audit) audit ;; environment) environment ;; prepare) ./scripts/tist2015_pipeline.sh prepare ;;
   train-teacher) ./scripts/tist2015_pipeline.sh train ;; train-student) train_student ;;
   evaluate-student) evaluate_student ;;
-  order-ablation) order_ablation ;; aggregate) aggregate_results ;;
+  order-ablation) order_ablation ;; rq5-significance) rq5_significance ;; aggregate) aggregate_results ;;
   test) require_python; "$PYTHON_BIN" -m unittest discover -s tests -v ;;
-  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|evaluate-student|order-ablation|aggregate|test>" >&2; exit 2 ;;
+  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|evaluate-student|order-ablation|rq5-significance|aggregate|test>" >&2; exit 2 ;;
 esac

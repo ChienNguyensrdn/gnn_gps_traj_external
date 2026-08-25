@@ -29,7 +29,8 @@ from hybrid.teacher_cache import ImmutableTeacherCache, canonical_hash
 from hybrid.sequential_belief import SequentialBelief
 from hybrid.evo_metrics import linear_cka, transition_cosine
 from hybrid.beliefmove_results import aggregate as aggregate_beliefmove, load_raw, write_raw
-from hybrid.evaluate_student import resolve_order_mode, summarize_logits
+from hybrid.evaluate_student import prediction_arrays, resolve_order_mode, summarize_logits
+from hybrid.paired_order_test import bootstrap_and_permutation, holm_adjust, paired_differences
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -191,6 +192,9 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
         self.assertEqual(metrics["recall@1"], 0.5)
         self.assertEqual(metrics["recall@5"], 1.0)
         self.assertGreater(metrics["nll"], 0.0)
+        arrays = prediction_arrays(logits, np.array([0, 2]))
+        self.assertEqual(arrays["ranks"].tolist(), [1, 2])
+        self.assertEqual(arrays["top1_correct"].tolist(), [1, 0])
 
     def test_student_evaluation_uses_checkpoint_order(self):
         reverse = {"distillation": {"order_mode": "reverse"}}
@@ -201,6 +205,23 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
 
     def test_legacy_student_checkpoint_defaults_to_correct_order(self):
         self.assertEqual(resolve_order_mode({}, "auto"), "correct")
+
+    def test_paired_order_effect_and_alignment(self):
+        correct = {"query_index": np.arange(4), "labels": np.array([0, 1, 2, 3]),
+                   "ranks": np.array([1, 1, 2, 3]), "reciprocal_rank": np.array([1, 1, .5, 1 / 3]),
+                   "true_probability": np.full(4, .5), "brier": np.full(4, .4)}
+        corrupt = {**correct, "ranks": np.array([2, 1, 4, 3]),
+                   "reciprocal_rank": np.array([.5, 1, .25, 1 / 3])}
+        difference = paired_differences(correct, corrupt, "recall@1")
+        self.assertAlmostEqual(float(difference.mean()), 0.25)
+        effect, ci, p_value = bootstrap_and_permutation([difference], 1000, 42)
+        self.assertAlmostEqual(effect, 0.25); self.assertEqual(len(ci), 2); self.assertGreater(p_value, 0)
+        misaligned = {**corrupt, "labels": np.array([0, 1, 3, 2])}
+        with self.assertRaisesRegex(ValueError, "unaligned"):
+            paired_differences(correct, misaligned, "mrr")
+
+    def test_holm_adjustment(self):
+        self.assertTrue(np.allclose(holm_adjust([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06]))
 
 
 class FusionAndMetricTests(unittest.TestCase):

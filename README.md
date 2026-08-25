@@ -255,6 +255,25 @@ for seed in 42 43 44; do
 done
 ```
 
+Mỗi evaluation đồng thời lưu `test.predictions.npz` theo từng query. Sau khi
+đã chạy đủ correct/reverse/random, tính paired bootstrap, sign-flip permutation
+test và Holm correction trên tập seed chung 42–44:
+
+```bash
+SIGNIFICANCE_ITERATIONS=10000 \
+  ./scripts/beliefmove_evo.sh rq5-significance
+```
+
+Output:
+
+```text
+results/beliefmove-evo/aggregated/rq5_paired_significance.json
+ideas/result_rq5_significance.md
+```
+
+Nếu các evaluation được tạo bằng phiên bản cũ và chưa có
+`test.predictions.npz`, chỉ cần chạy lại `evaluate-student`; không train lại.
+
 ## 9. Teacher cache
 
 ```bash

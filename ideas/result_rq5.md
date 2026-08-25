@@ -117,7 +117,7 @@ E5-dual có temporal evolution loss. Việc chất lượng giảm khi phá th�
 
 ## 9. Công việc tiếp theo
 
-1. Tính paired difference trên cùng query và ít nhất trên tập seed chung 42–44.
+1. Chạy `./scripts/beliefmove_evo.sh rq5-significance` sau khi có per-query prediction artifacts cho seed chung 42–44.
 2. Nếu cần chứng minh vai trò riêng của temporal evolution, chạy order-corruption đối chứng cho E4-layer.
 3. Lặp lại trên các thành phố còn lại trước khi đưa ra kết luận tổng quát cho TIST2015.
 

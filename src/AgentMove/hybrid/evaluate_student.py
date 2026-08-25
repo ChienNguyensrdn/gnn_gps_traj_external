@@ -12,7 +12,7 @@ from .metrics import expected_calibration_error
 from .neural_cgm import ModelConfig, _batches, _torch, build_examples, build_model
 
 
-def summarize_logits(logits: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+def prediction_arrays(logits: np.ndarray, labels: np.ndarray) -> dict[str, np.ndarray]:
     shifted = logits - logits.max(axis=1, keepdims=True)
     probabilities = np.exp(shifted); probabilities /= probabilities.sum(axis=1, keepdims=True)
     order = np.argsort(-logits, axis=1, kind="stable")
@@ -24,14 +24,28 @@ def summarize_logits(logits: np.ndarray, labels: np.ndarray) -> dict[str, float]
     true_probability = probabilities[np.arange(len(labels)), labels]
     one_hot = np.zeros_like(probabilities); one_hot[np.arange(len(labels)), labels] = 1.0
     return {
+        "labels": labels.astype(np.int64),
+        "top1": order[:, 0].astype(np.int64),
+        "ranks": ranks.astype(np.int32),
+        "reciprocal_rank": (1.0 / ranks).astype(np.float32),
+        "true_probability": true_probability.astype(np.float32),
+        "confidence": confidence.astype(np.float32),
+        "top1_correct": correct.astype(np.int8),
+        "brier": np.sum((probabilities - one_hot) ** 2, axis=1).astype(np.float32),
+    }
+
+
+def summarize_logits(logits: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+    arrays = prediction_arrays(logits, labels)
+    return {
         "queries": int(len(labels)),
-        "recall@1": float(np.mean(ranks <= 1)),
-        "recall@5": float(np.mean(ranks <= 5)),
-        "recall@10": float(np.mean(ranks <= 10)),
-        "mrr": float(np.mean(1.0 / ranks)),
-        "nll": float(-np.mean(np.log(np.clip(true_probability, 1e-12, 1.0)))),
-        "brier": float(np.mean(np.sum((probabilities - one_hot) ** 2, axis=1))),
-        "ece": expected_calibration_error(confidence, correct),
+        "recall@1": float(np.mean(arrays["ranks"] <= 1)),
+        "recall@5": float(np.mean(arrays["ranks"] <= 5)),
+        "recall@10": float(np.mean(arrays["ranks"] <= 10)),
+        "mrr": float(np.mean(arrays["reciprocal_rank"])),
+        "nll": float(-np.mean(np.log(np.clip(arrays["true_probability"], 1e-12, 1.0)))),
+        "brier": float(np.mean(arrays["brier"])),
+        "ece": expected_calibration_error(arrays["confidence"], arrays["top1_correct"]),
     }
 
 
@@ -64,11 +78,16 @@ def evaluate(args) -> dict[str, float]:
             all_labels.append(labels.cpu().numpy())
     if not all_logits:
         raise ValueError("test split produced zero examples")
-    metrics = summarize_logits(np.concatenate(all_logits), np.concatenate(all_labels))
+    logits = np.concatenate(all_logits); labels = np.concatenate(all_labels)
+    metrics = summarize_logits(logits, labels)
     metrics.update({"device": str(device), "checkpoint": str(Path(args.checkpoint).resolve()),
                     "order_mode": order_mode, "seed": args.seed})
     output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({"metrics": metrics}, indent=2) + "\n", encoding="utf-8")
+    if args.predictions_output:
+        predictions = Path(args.predictions_output); predictions.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(predictions, **prediction_arrays(logits, labels),
+                            query_index=np.arange(len(labels), dtype=np.int64))
     print(json.dumps(metrics)); return metrics
 
 
@@ -78,6 +97,7 @@ def main() -> None:
     parser.add_argument("--output", required=True); parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--device", default="auto"); parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--order-mode", choices=["auto", "correct", "reverse", "random"], default="auto")
+    parser.add_argument("--predictions-output", help="Optional per-query NPZ for paired significance tests")
     evaluate(parser.parse_args())
 
 
