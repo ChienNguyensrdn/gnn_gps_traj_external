@@ -15,7 +15,7 @@ require_python() {
 
 audit() {
   ./scripts/tist2015_pipeline.sh audit
-  for config in configs/beliefmove_evo/base.json configs/beliefmove_evo/evolution_ablation.json configs/beliefmove_evo/routing.json; do
+  for config in configs/beliefmove_evo/base.json configs/beliefmove_evo/evolution_ablation.json configs/beliefmove_evo/routing.json configs/beliefmove_evo/belief_memory.json; do
     [[ -f "$config" ]] && echo "config=ready $config" || { echo "config=missing $config"; return 2; }
   done
 }
@@ -155,12 +155,31 @@ aggregate_rq6() {
     --output "$OUT/aggregated/rq6_summary.json" --markdown ../../ideas/result_rq6.md
 }
 
+evaluate_rq7() {
+  require_python
+  local checkpoint="$OUT/artifacts/full/$CITY/E5-dual/correct/seed-$SEED/best.pt"
+  local output_dir="$OUT/artifacts/full/$CITY/E5-dual/correct/seed-$SEED/rq7"
+  [[ -f "$checkpoint" ]] || { echo "Missing frozen E5-dual checkpoint: $checkpoint" >&2; exit 2; }
+  "$PYTHON_BIN" -m hybrid.rq7_belief_memory --checkpoint "$checkpoint" \
+    --train-csv "$BASE/getnext/train.csv" --validation-csv "$BASE/getnext/val.csv" \
+    --test-csv "$BASE/getnext/test.csv" --output-dir "$output_dir" \
+    --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED"
+}
+
+aggregate_rq7() {
+  require_python
+  "$PYTHON_BIN" -m hybrid.rq7_aggregate \
+    --artifacts-root "$OUT/artifacts/full/$CITY/E5-dual/correct" \
+    --seeds ${RQ7_SEEDS:-42 43 44} --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
+    --output "$OUT/aggregated/rq7_summary.json" --markdown ../../ideas/result_rq7.md
+}
+
 case "$ACTION" in
   audit) audit ;; environment) environment ;; prepare) ./scripts/tist2015_pipeline.sh prepare ;;
   train-teacher) ./scripts/tist2015_pipeline.sh train ;; train-student) train_student ;;
   evaluate-student) evaluate_student ;;
   order-ablation) order_ablation ;; rq5-significance) rq5_significance ;;
-  evaluate-rq6) evaluate_rq6 ;; aggregate-rq6) aggregate_rq6 ;; aggregate) aggregate_results ;;
+  evaluate-rq6) evaluate_rq6 ;; aggregate-rq6) aggregate_rq6 ;; evaluate-rq7) evaluate_rq7 ;; aggregate-rq7) aggregate_rq7 ;; aggregate) aggregate_results ;;
   test) require_python; "$PYTHON_BIN" -m unittest discover -s tests -v ;;
-  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|evaluate-student|order-ablation|rq5-significance|evaluate-rq6|aggregate-rq6|aggregate|test>" >&2; exit 2 ;;
+  *) echo "Usage: $0 <audit|environment|prepare|train-teacher|train-student|evaluate-student|order-ablation|rq5-significance|evaluate-rq6|aggregate-rq6|evaluate-rq7|aggregate-rq7|aggregate|test>" >&2; exit 2 ;;
 esac

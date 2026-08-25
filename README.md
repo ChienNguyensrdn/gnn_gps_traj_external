@@ -313,6 +313,42 @@ results/beliefmove-evo/aggregated/rq6_summary.json
 ideas/result_rq6.md
 ```
 
+### RQ7 — Belief memory
+
+RQ7 dùng checkpoint `E5-dual/correct` đã đóng băng và đánh giá bốn cơ chế trên
+mọi prefix theo thứ tự thời gian của từng trajectory:
+
+- `B0-static`: suy luận độc lập từ E5-dual.
+- `B1-history`: thêm prior tần suất các POI đã quan sát trong prefix.
+- `B2-sequential`: truyền posterior của bước trước sang bước kế tiếp.
+- `B3-dbn`: kết hợp E5-dual với prior chuyển trạng thái bậc một từ POI hiện tại.
+
+Transition/prior chỉ được fit từ train; trọng số fusion được chọn bằng validation.
+Belief được reset ở ranh giới trajectory, sau đó test được đánh giá đúng một lần.
+RQ7 dùng tất cả prefix nên số tuyệt đối không được so trực tiếp với RQ4/RQ6 vốn
+chỉ dùng query cuối của mỗi trajectory.
+
+```bash
+cd src/AgentMove
+for seed in 42 43 44; do
+  CITY=Tokyo SEED="$seed" BATCH_SIZE=256 DEVICE=cuda \
+    ./scripts/beliefmove_evo.sh evaluate-rq7
+done
+```
+
+Kết quả mỗi seed nằm tại
+`results/beliefmove-evo/artifacts/full/Tokyo/E5-dual/correct/seed-<SEED>/rq7/`.
+
+Sau khi đủ ba seed, tổng hợp mean/std và paired significance (Holm correction):
+
+```bash
+CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 \
+  ./scripts/beliefmove_evo.sh aggregate-rq7
+```
+
+Output là `results/beliefmove-evo/aggregated/rq7_summary.json` và
+`ideas/result_rq7.md`.
+
 ## 9. Teacher cache
 
 ```bash

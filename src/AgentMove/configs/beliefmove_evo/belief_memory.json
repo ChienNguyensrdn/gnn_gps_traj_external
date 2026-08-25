@@ -1,0 +1,11 @@
+{
+  "rq": "RQ7",
+  "backbone": "E5-dual-correct",
+  "variants": ["B0-static", "B1-history", "B2-sequential", "B3-dbn"],
+  "weight_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
+  "smoothing": 1.0,
+  "selection_metric": "recall@1+recall@10",
+  "fit_splits": ["train", "validation"],
+  "evaluation_split": "test",
+  "query_protocol": "all chronological prefixes; belief resets at trajectory boundary"
+}
