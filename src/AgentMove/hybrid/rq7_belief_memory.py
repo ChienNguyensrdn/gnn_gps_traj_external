@@ -90,22 +90,56 @@ def _examples(queries):
              query["target_slot"], query["label"]) for query in queries]
 
 
-def infer_to_memmap(model, queries, batch_size, device, seed, path: Path, size: int):
-    probabilities = np.lib.format.open_memmap(path, mode="w+", dtype=np.float32,
-                                              shape=(len(queries), size))
+def stream_variants(model, queries, specifications, batch_size, device, seed,
+                    global_prior, transitions, smoothing):
+    """Run the backbone once and retain only scalar per-query statistics."""
+    count = len(queries)
+    outputs = {}
+    states = {}
+    for variant, weight in specifications:
+        outputs[(variant, weight)] = {
+            "labels": np.empty(count, dtype=np.int64), "top1": np.empty(count, dtype=np.int64),
+            "ranks": np.empty(count, dtype=np.int32), "reciprocal_rank": np.empty(count, dtype=np.float32),
+            "true_probability": np.empty(count, dtype=np.float32), "confidence": np.empty(count, dtype=np.float32),
+            "top1_correct": np.empty(count, dtype=np.int8), "brier": np.empty(count, dtype=np.float32),
+        }
+        states[(variant, weight)] = (None, None)
     torch = _torch()
-    offset = 0
     with torch.no_grad():
-        for start in range(0, len(queries), batch_size):
+        for start in range(0, count, batch_size):
             chunk = queries[start:start + batch_size]
             batch = next(_batches(_examples(chunk), len(chunk), False, seed))
             poi, slots, lengths, users, targets, _ = [value.to(device) for value in batch]
             logits = model(poi, slots, lengths, users, targets).cpu().numpy()
-            logits -= logits.max(axis=1, keepdims=True); values = np.exp(logits)
-            values /= values.sum(axis=1, keepdims=True)
-            probabilities[offset:offset + len(chunk)] = values; offset += len(chunk)
-    probabilities.flush()
-    return probabilities
+            logits -= logits.max(axis=1, keepdims=True); bases = np.exp(logits)
+            bases /= bases.sum(axis=1, keepdims=True)
+            for local_index, query in enumerate(chunk):
+                index = start + local_index; base = bases[local_index].astype(np.float64, copy=False)
+                trajectory = query["trajectory_id"]; prefix = query["pois"][:query["step"]]
+                history = None; transition = None
+                for variant, weight in specifications:
+                    previous, previous_trajectory = states[(variant, weight)]
+                    if variant == "B0-static": current = base
+                    elif variant == "B1-history":
+                        if history is None: history = smoothed_counts(prefix, global_prior, smoothing)
+                        current = fuse(base, history, weight)
+                    elif variant == "B2-sequential":
+                        evidence = previous if trajectory == previous_trajectory else global_prior
+                        current = fuse(base, evidence, weight)
+                    elif variant == "B3-dbn":
+                        if transition is None:
+                            transition = transition_prior(prefix[-1], transitions, global_prior, smoothing)
+                        current = fuse(base, transition, weight)
+                    else: raise ValueError(f"unknown RQ7 variant: {variant}")
+                    label = query["label"]; top1 = int(np.argmax(current)); true = current[label]
+                    rank = 1 + int(np.count_nonzero(current > true)) + int(np.count_nonzero(current[:label] == true))
+                    arrays = outputs[(variant, weight)]
+                    arrays["labels"][index] = label; arrays["top1"][index] = top1; arrays["ranks"][index] = rank
+                    arrays["reciprocal_rank"][index] = 1.0 / rank; arrays["true_probability"][index] = true
+                    arrays["confidence"][index] = current[top1]; arrays["top1_correct"][index] = top1 == label
+                    arrays["brier"][index] = np.dot(current, current) - 2 * true + 1
+                    states[(variant, weight)] = (current, trajectory)
+    return outputs
 
 
 def variant_arrays(base, queries, variant, weight, global_prior, transitions, smoothing):
@@ -159,28 +193,31 @@ def evaluate(args):
     test_queries = sequence_queries(test, checkpoint["user_map"])
     del train, validation, test
     output_dir = Path(args.output_dir); output_dir.mkdir(parents=True, exist_ok=True)
-    validation_cache = output_dir / ".validation_base.npy"; test_cache = output_dir / ".test_base.npy"
-    validation_base = infer_to_memmap(model, validation_queries, args.batch_size, device, args.seed, validation_cache, size)
-    test_base = infer_to_memmap(model, test_queries, args.batch_size, device, args.seed, test_cache, size)
+    # Remove caches left by the pre-streaming evaluator after an OOM/SIGBUS.
+    for stale in (output_dir / ".validation_base.npy", output_dir / ".test_base.npy"):
+        stale.unlink(missing_ok=True)
     selected = {"B0-static": 0.0}; validation_metrics = {}; test_metrics = {}
-    try:
-        for variant in VARIANTS:
-            candidates = [0.0] if variant == "B0-static" else grid; values = []
-            for weight in candidates:
-                arrays = variant_arrays(validation_base, validation_queries, variant, weight,
-                                        global_prior, transitions, smoothing)
-                metrics = summarize_arrays(arrays); values.append((metrics["recall@1"] + metrics["recall@10"], weight, metrics))
-            _, weight, metrics = max(values, key=lambda item: (item[0], -item[1])); selected[variant] = weight
-            validation_metrics[variant] = metrics
-            arrays = variant_arrays(test_base, test_queries, variant, weight, global_prior, transitions, smoothing)
-            test_metrics[variant] = summarize_arrays(arrays)
-            np.savez_compressed(output_dir / f"{variant}.test.predictions.npz", **arrays,
-                                query_index=np.arange(len(test_queries)),
-                                trajectory_id=np.asarray([q["trajectory_id"] for q in test_queries]),
-                                step=np.asarray([q["step"] for q in test_queries], dtype=np.int32))
-    finally:
-        del validation_base, test_base
-        validation_cache.unlink(missing_ok=True); test_cache.unlink(missing_ok=True)
+    validation_specs = [(variant, weight) for variant in VARIANTS
+                        for weight in ([0.0] if variant == "B0-static" else grid)]
+    validation_outputs = stream_variants(model, validation_queries, validation_specs, args.batch_size,
+                                         device, args.seed, global_prior, transitions, smoothing)
+    for variant in VARIANTS:
+        candidates = [0.0] if variant == "B0-static" else grid; values = []
+        for weight in candidates:
+            metrics = summarize_arrays(validation_outputs[(variant, weight)])
+            values.append((metrics["recall@1"] + metrics["recall@10"], weight, metrics))
+        _, weight, metrics = max(values, key=lambda item: (item[0], -item[1]))
+        selected[variant] = weight; validation_metrics[variant] = metrics
+    del validation_outputs, validation_queries
+    test_specs = [(variant, selected[variant]) for variant in VARIANTS]
+    test_outputs = stream_variants(model, test_queries, test_specs, args.batch_size, device, args.seed,
+                                   global_prior, transitions, smoothing)
+    for variant, weight in test_specs:
+        arrays = test_outputs[(variant, weight)]; test_metrics[variant] = summarize_arrays(arrays)
+        np.savez_compressed(output_dir / f"{variant}.test.predictions.npz", **arrays,
+                            query_index=np.arange(len(test_queries)),
+                            trajectory_id=np.asarray([q["trajectory_id"] for q in test_queries]),
+                            step=np.asarray([q["step"] for q in test_queries], dtype=np.int32))
     result = {"rq": "RQ7", "seed": args.seed, "device": str(device), "checkpoint": str(Path(args.checkpoint).resolve()),
               "protocol": "all chronological prefixes; reset belief per trajectory",
               "fit_splits": ["train", "validation"], "evaluation_split": "test",
