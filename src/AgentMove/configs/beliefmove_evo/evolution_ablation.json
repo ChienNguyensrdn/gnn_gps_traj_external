@@ -8,7 +8,8 @@
     "E2-kd-traj": {"kd": 1.0, "trajectory": 1.0, "velocity": 0.0, "temporal": 0.0},
     "E3-kd-vel": {"kd": 1.0, "trajectory": 0.0, "velocity": 1.0, "temporal": 0.0},
     "E4-layer": {"kd": 1.0, "trajectory": 1.0, "velocity": 1.0, "temporal": 0.0},
-    "E5-dual": {"kd": 1.0, "trajectory": 1.0, "velocity": 1.0, "temporal": 1.0}
+    "E5-dual": {"kd": 1.0, "trajectory": 1.0, "velocity": 1.0, "temporal": 1.0},
+    "E6-temporal": {"kd": 1.0, "trajectory": 0.0, "velocity": 0.0, "temporal": 1.0}
   },
   "order_modes": ["correct", "reverse", "random"],
   "random_seeds": [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]

@@ -114,6 +114,7 @@ data/hybrid/TIST2015/<CITY>/neural_cgm/best.pt
 | `E3-kd-vel` | CE + KD + velocity |
 | `E4-layer` | CE + KD + trajectory + velocity |
 | `E5-dual` | E4 + temporal evolution |
+| `E6-temporal` | CE + KD + temporal evolution only |
 
 ### Smoke test
 
@@ -273,6 +274,44 @@ ideas/result_rq5_significance.md
 
 Nếu các evaluation được tạo bằng phiên bản cũ và chưa có
 `test.predictions.npz`, chỉ cần chạy lại `evaluate-student`; không train lại.
+
+### RQ6 — Dual-Axis Evolution
+
+RQ6 bổ sung temporal-only để tách đóng góp theo layer và theo thời gian. Chỉ
+`E6-temporal` cần train mới:
+
+```bash
+for seed in 42 43 44; do
+  CITY=Tokyo SEED="$seed" VARIANT=E6-temporal EPOCHS=10 \
+  BATCH_SIZE=256 DEVICE=cuda ./scripts/beliefmove_evo.sh train-student
+done
+```
+
+Đánh giá sáu variant bằng checkpoint đã chọn trên validation:
+
+```bash
+for seed in 42 43 44; do
+  for variant in E1-kd E2-kd-traj E3-kd-vel E4-layer E6-temporal E5-dual; do
+    CITY=Tokyo SEED="$seed" VARIANT="$variant" BATCH_SIZE=256 DEVICE=cuda \
+      ./scripts/beliefmove_evo.sh evaluate-rq6
+  done
+done
+```
+
+Evaluator đo ranking/calibration, CKA, layer/temporal transition cosine và
+short/medium/long. Ngưỡng độ dài là tertile fit trên validation rồi khóa cho
+test. Tổng hợp và paired significance:
+
+```bash
+SIGNIFICANCE_ITERATIONS=10000 ./scripts/beliefmove_evo.sh aggregate-rq6
+```
+
+Output:
+
+```text
+results/beliefmove-evo/aggregated/rq6_summary.json
+ideas/result_rq6.md
+```
 
 ## 9. Teacher cache
 

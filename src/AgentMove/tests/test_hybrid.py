@@ -31,6 +31,9 @@ from hybrid.evo_metrics import linear_cka, transition_cosine
 from hybrid.beliefmove_results import aggregate as aggregate_beliefmove, load_raw, write_raw
 from hybrid.evaluate_student import prediction_arrays, resolve_order_mode, summarize_logits
 from hybrid.paired_order_test import bootstrap_and_permutation, holm_adjust, paired_differences
+from hybrid.rq6_evaluate import AlignmentAccumulator, bucket_masks, length_thresholds, masked_transition_sum
+from hybrid.rq6_aggregate import (DEFAULT_VARIANTS, aggregate_runs as aggregate_rq6_runs,
+                                  load_runs as load_rq6_runs, paired_tests as paired_rq6_tests, render as render_rq6)
 
 
 def query(query_id, true_id, logits, city="Shanghai", backbone="test-llm"):
@@ -222,6 +225,49 @@ class EvolutionAndSelectiveTests(unittest.TestCase):
 
     def test_holm_adjustment(self):
         self.assertTrue(np.allclose(holm_adjust([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06]))
+
+    def test_rq6_length_buckets_are_fit_without_test_labels(self):
+        thresholds = length_thresholds(np.arange(1, 10))
+        self.assertEqual(thresholds, (3, 6))
+        masks = bucket_masks(np.arange(1, 10), thresholds)
+        self.assertEqual([int(masks[name].sum()) for name in ("short", "medium", "long")], [3, 3, 3])
+
+    def test_rq6_masked_transition_cosine_ignores_padding(self):
+        values = np.array([[[0., 0.], [1., 0.], [1., 1.], [99., 99.]]])
+        total, count = masked_transition_sum(values, values.copy(), np.array([3]))
+        self.assertEqual(count, 2); self.assertAlmostEqual(total / count, 1.0)
+
+    def test_rq6_alignment_is_fit_on_shared_validation_states(self):
+        student = np.array([[1., 0.], [0., 1.], [-1., 0.], [0., -1.]])
+        rotation = np.array([[0., -1.], [1., 0.]])
+        teacher = student @ rotation
+        accumulator = AlignmentAccumulator(2); accumulator.add(student, teacher)
+        fitted, student_mean, teacher_mean = accumulator.solve()
+        self.assertTrue(np.allclose(fitted, rotation))
+        self.assertTrue(np.allclose((student - student_mean) @ fitted + teacher_mean, teacher))
+
+    def test_rq6_aggregate_and_paired_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            metric_names = ("recall@1", "recall@5", "recall@10", "mrr", "nll", "brier", "ece",
+                            "cka", "transition_cosine", "layer_transition_cosine")
+            for variant_index, variant in enumerate(DEFAULT_VARIANTS):
+                for seed in (42, 43, 44):
+                    target = root / variant / "correct" / f"seed-{seed}"; target.mkdir(parents=True)
+                    metrics = {name: float(variant_index + 1) / 10 for name in metric_names}
+                    bucket = {"queries": 4, "recall@1": .25, "recall@5": .5, "recall@10": .75,
+                              "mrr": .4, "nll": 1., "brier": .8, "ece": .1}
+                    (target / "rq6.metrics.json").write_text(json.dumps({"metrics": metrics,
+                        "length_thresholds": {"short_max": 3, "medium_max": 6},
+                        "length_buckets": {name: bucket for name in ("short", "medium", "long")}}))
+                    ranks = np.array([1, 2, 6, 11]) + (variant_index % 2)
+                    np.savez_compressed(target / "rq6.predictions.npz", query_index=np.arange(4),
+                        labels=np.arange(4), ranks=ranks, reciprocal_rank=1 / ranks,
+                        true_probability=np.full(4, .5), brier=np.full(4, .4))
+            runs = load_rq6_runs(root, list(DEFAULT_VARIANTS), [42, 43, 44])
+            variants = aggregate_rq6_runs(runs); paired = paired_rq6_tests(root, [42, 43, 44], 1000, 42)
+            self.assertEqual(len(variants), 6); self.assertEqual(len(paired), 24)
+            self.assertIn("Paired significance", render_rq6({"variants": variants, "paired_tests": paired}))
 
 
 class FusionAndMetricTests(unittest.TestCase):
