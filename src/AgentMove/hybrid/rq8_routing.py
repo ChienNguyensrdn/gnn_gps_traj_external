@@ -85,6 +85,19 @@ def choose_threshold(kind, uncertainty, stage_ranks, llm_ranks, configured, budg
     return max(choices)[2]
 
 
+def threshold_mask(kind, uncertainty, threshold):
+    return uncertainty > threshold if kind == "entropy" else uncertainty < threshold
+
+
+def oracle_mask(stage_ranks, llm_ranks, budget):
+    gain = ((llm_ranks <= 1).astype(float) - (stage_ranks <= 1).astype(float)
+            + 1.0 / llm_ranks - 1.0 / stage_ranks)
+    order = np.argsort(-gain, kind="stable"); limit = int(np.floor(budget * len(gain)))
+    selected = order[:limit]; selected = selected[gain[selected] > 0]
+    mask = np.zeros(len(gain), dtype=bool); mask[selected] = True
+    return mask
+
+
 def evaluate(args):
     config = json.loads(Path(args.config).read_text()); temperature = float(
         json.loads(Path(args.calibration).read_text())["temperature"]["temperature"])
@@ -99,25 +112,49 @@ def evaluate(args):
     val_llm = np.asarray([row["true_rank"] for row in val_always], dtype=np.int32)
     test_llm = np.asarray([row["true_rank"] for row in test_always], dtype=np.int32)
     budget = float(config["target_call_rate"]); quantiles = int(config["auto_quantile_candidates"])
-    entropy_threshold = choose_threshold("entropy", val_entropy, val_stage, val_llm,
-                                         config["entropy_thresholds"], budget, quantiles)
-    margin_threshold = choose_threshold("margin", val_margin, val_stage, val_llm,
-                                        config["margin_thresholds"], budget, quantiles)
+    budget_sweep = {}; selected_by_budget = {}
+    for candidate_budget in [float(value) for value in config.get("call_budgets", [budget])]:
+        entropy_value = choose_threshold("entropy", val_entropy, val_stage, val_llm,
+                                         config["entropy_thresholds"], candidate_budget, quantiles)
+        margin_value = choose_threshold("margin", val_margin, val_stage, val_llm,
+                                        config["margin_thresholds"], candidate_budget, quantiles)
+        selected_by_budget[str(candidate_budget)] = {"entropy": entropy_value, "margin": margin_value}
+        budget_sweep[str(candidate_budget)] = {}
+        for kind, uncertainty, threshold in (("entropy", test_entropy, entropy_value),
+                                             ("margin", test_margin, margin_value)):
+            calls = threshold_mask(kind, uncertainty, threshold)
+            budget_sweep[str(candidate_budget)][kind] = metrics(routed(test_stage, test_llm, calls), calls, test_always)
+    primary = selected_by_budget[str(budget)]
+    entropy_threshold = primary["entropy"]; margin_threshold = primary["margin"]
     masks = {"never": np.zeros(len(test_rows), dtype=bool), "always": np.ones(len(test_rows), dtype=bool),
-             "entropy": test_entropy > entropy_threshold, "margin": test_margin < margin_threshold}
+             "entropy": threshold_mask("entropy", test_entropy, entropy_threshold),
+             "margin": threshold_mask("margin", test_margin, margin_threshold)}
     random_rate = float(masks["entropy"].mean()); random_count = int(round(random_rate * len(test_rows)))
     random_mask = np.zeros(len(test_rows), dtype=bool)
     random_mask[np.random.default_rng(args.seed).permutation(len(test_rows))[:random_count]] = True
     masks["random-budget-matched"] = random_mask
+    oracle = oracle_mask(test_stage, test_llm, budget)
     summaries = {}; output = Path(args.output_dir); output.mkdir(parents=True, exist_ok=True)
     for policy in POLICIES:
         ranks = routed(test_stage, test_llm, masks[policy]); summaries[policy] = metrics(ranks, masks[policy], test_always)
         np.savez_compressed(output / f"{policy}.test.predictions.npz", query_id=np.asarray(test_query_ids),
                             labels=np.arange(len(test_rows)), query_index=np.arange(len(test_rows)),
                             ranks=ranks, called_llm=masks[policy].astype(np.int8))
+    oracle_metrics = metrics(routed(test_stage, test_llm, oracle), oracle, test_always)
+    np.savez_compressed(output / "routing_diagnostics.test.npz", query_id=np.asarray(test_query_ids),
+                        stage_ranks=test_stage, llm_ranks=test_llm, entropy=test_entropy, margin=test_margin,
+                        oracle_called=oracle.astype(np.int8))
+    validation_selection = {}
+    for kind, uncertainty, threshold in (("entropy", val_entropy, entropy_threshold),
+                                         ("margin", val_margin, margin_threshold)):
+        calls = threshold_mask(kind, uncertainty, threshold)
+        validation_selection[kind] = {"threshold": threshold, "call_rate": float(calls.mean()),
+                                      "metrics": metrics(routed(val_stage, val_llm, calls), calls, val_always)}
     payload = {"rq": "RQ8", "seed": args.seed, "fit_split": "validation", "evaluation_split": "test",
                "limit": args.limit, "target_call_rate": budget,
                "selected_thresholds": {"entropy": entropy_threshold, "margin": margin_threshold},
+               "validation_selection": validation_selection, "budget_sweep": budget_sweep,
+               "oracle_upper_bound": oracle_metrics,
                "random_matched_to": "entropy test call rate", "metrics": summaries}
     (output / "rq8.metrics.json").write_text(json.dumps(payload, indent=2) + "\n")
     print(json.dumps(payload, indent=2)); return payload

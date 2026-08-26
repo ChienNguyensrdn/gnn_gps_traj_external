@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from hybrid.rq8_routing import choose_threshold, metrics, routed
+from hybrid.rq8_routing import choose_threshold, metrics, oracle_mask, routed
 
 
 class RQ8RoutingTest(unittest.TestCase):
@@ -21,6 +21,10 @@ class RQ8RoutingTest(unittest.TestCase):
         self.assertEqual(result["llm_call_rate"], 0.5)
         self.assertEqual(result["latency_mean"], 1.0)
         self.assertEqual(result["tokens_per_query"], 6.0)
+
+    def test_oracle_calls_only_positive_gain_within_budget(self):
+        mask = oracle_mask(np.asarray([1, 5, 2, 3]), np.asarray([2, 1, 2, 1]), 0.5)
+        np.testing.assert_array_equal(mask, [False, True, False, True])
 
 
 if __name__ == "__main__": unittest.main()

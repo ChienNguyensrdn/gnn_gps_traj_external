@@ -384,18 +384,21 @@ CITY=Tokyo RQ8_LIMIT=200 ./scripts/rq8_routing.sh audit
 # Gọi Ollama và tạo cache; chạy lại cùng lệnh để resume.
 CITY=Tokyo RQ8_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq8_routing.sh collect
 
-# Không gọi LLM; ba seed tái sử dụng cùng Always cache.
-for seed in 42 43 44; do
-  CITY=Tokyo RQ8_LIMIT=200 SEED="$seed" ./scripts/rq8_routing.sh evaluate
-done
+# Không gọi LLM; tạo 50 random permutations, deterministic policies giữ một run.
+CITY=Tokyo RQ8_LIMIT=200 ./scripts/rq8_routing.sh evaluate-random
 
-CITY=Tokyo RQ8_LIMIT=200 RQ8_SEEDS="42 43 44" ./scripts/rq8_routing.sh aggregate
+CITY=Tokyo RQ8_LIMIT=200 \
+RQ8_SEEDS="$(seq -s ' ' 42 91)" SIGNIFICANCE_ITERATIONS=10000 \
+  ./scripts/rq8_routing.sh aggregate
 ```
 
 `collect` yêu cầu `evidence_cache.jsonl` và `calibration.json` của matched Hybrid
 run. Chỉ rõ run khác bằng `HYBRID_RUN_DIR=/path/to/city/run`. Output tổng hợp là
 `results/beliefmove-evo/aggregated/rq8_summary.json` và `ideas/results_rq8.md`.
 Run giới hạn 200 query là bounded experiment, không phải full-query result.
+Evaluator đồng thời sinh budget sweep 10/25/50%, oracle-gain upper bound và
+paired significance với Holm correction; các bước này tái sử dụng cache, không
+gọi lại Ollama.
 
 ## 11. Baselines
 

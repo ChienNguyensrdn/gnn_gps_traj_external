@@ -43,8 +43,17 @@ evaluate() {
 
 aggregate() {
   "$PYTHON_BIN" -m hybrid.rq8_aggregate --root "$ROOT" --seeds ${RQ8_SEEDS:-42 43 44} \
+    --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
     --output "results/beliefmove-evo/aggregated/rq8_summary.json" --markdown ../../ideas/results_rq8.md
 }
 
-case "$ACTION" in audit) audit ;; collect) collect ;; evaluate) evaluate ;; aggregate) aggregate ;;
-  *) echo "Usage: $0 <audit|collect|evaluate|aggregate>" >&2; exit 2 ;; esac
+evaluate_random() {
+  local random_seed
+  for random_seed in ${RQ8_RANDOM_SEEDS:-$(seq 42 91)}; do
+    CITY="$CITY" RQ8_LIMIT="$LIMIT" OLLAMA_MODEL="$MODEL" HYBRID_RUN_DIR="$HYBRID_RUN_DIR" \
+      SEED="$random_seed" "$0" evaluate
+  done
+}
+
+case "$ACTION" in audit) audit ;; collect) collect ;; evaluate) evaluate ;; evaluate-random) evaluate_random ;; aggregate) aggregate ;;
+  *) echo "Usage: $0 <audit|collect|evaluate|evaluate-random|aggregate>" >&2; exit 2 ;; esac
