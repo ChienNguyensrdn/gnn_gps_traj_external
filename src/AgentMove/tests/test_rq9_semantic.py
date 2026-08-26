@@ -1,5 +1,6 @@
 import unittest
 
+from hybrid.free_text_rerank import _metrics
 from hybrid.rq9_semantic_rerank import donor_histories, perturb, random_poi_context, shuffled
 
 
@@ -27,6 +28,11 @@ class RQ9SemanticTest(unittest.TestCase):
         donors = donor_histories(self.rows)
         history, context = perturb(self.rows[0], "context-none", donors, {}, 42)
         self.assertEqual(history, self.rows[0]["history"]); self.assertEqual(context, [])
+
+    def test_rq9_metric_schema_includes_candidate_recall(self):
+        row = {"true_rank": 3, "true_in_top_k": True, "valid": True, "input_tokens": 10,
+               "output_tokens": 2, "api_calls": 1, "latency_seconds": 0.5}
+        self.assertEqual(_metrics([row])["candidate_recall"], 1.0)
 
 
 if __name__ == "__main__": unittest.main()

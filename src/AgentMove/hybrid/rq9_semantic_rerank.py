@@ -111,14 +111,19 @@ def run(args):
             valid = set(ranking) == set(top_ids) and len(ranking) == len(top_ids); ranking += [value for value in top_ids if value not in ranking]
             true_id = str(row["true_id"]); tail = [ids[index] for index in order[args.top_k:]]
             true_rank = ranking.index(true_id) + 1 if true_id in ranking else args.top_k + tail.index(true_id) + 1
-            result = {"query_id": query_id, "true_id": true_id, "true_rank": true_rank, "ranking_top_k": ranking,
+            result = {"query_id": query_id, "true_id": true_id, "true_rank": true_rank,
+                      "true_in_top_k": true_rank <= args.top_k, "ranking_top_k": ranking,
                       "valid": valid, "error": "" if valid else error or "incomplete_ranking_filled",
                       "input_tokens": max(1, len(text) // 4) * calls, "output_tokens": max(1, len(raw) // 4),
                       "api_calls": calls, "latency_seconds": elapsed, "variant": args.variant,
                       "model": args.model_name, "protocol": "rq9-semantic-prompt-v1"}
             cached[query_id] = result; handle.write(json.dumps(result, ensure_ascii=False) + "\n"); handle.flush()
             if position % 10 == 0: print(f"RQ9 {args.variant}: {len(cached)}/{len(rows)}", flush=True)
-    ordered = [cached[str(row["query_id"])] for row in rows]; result = _metrics(ordered)
+    ordered = [cached[str(row["query_id"])] for row in rows]
+    # Backward-compatible migration for caches produced before
+    # true_in_top_k was added. No LLM calls need to be repeated.
+    for row in ordered: row.setdefault("true_in_top_k", row["true_rank"] <= args.top_k)
+    result = _metrics(ordered)
     result.update({"variant": args.variant, "seed": args.seed, "limit": args.limit, "protocol": "rq9-semantic-prompt-v1"})
     write_json(destination / "metrics.json", result); print(json.dumps(result, indent=2)); return result
 
