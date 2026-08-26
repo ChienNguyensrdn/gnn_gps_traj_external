@@ -370,6 +370,33 @@ content-addressed: cùng key nhưng khác content sẽ bị từ chối.
 
 Calibration và router threshold chỉ fit trên validation. Không tune test set.
 
+### RQ8 — Uncertainty-aware LLM routing
+
+RQ8 dùng cùng Neural-CGM candidate space và một cache `Always-LLM` bất biến để
+so sánh `Never`, `Always`, `Entropy`, `Margin` và `Random-budget-matched`.
+Threshold Entropy/Margin chỉ được chọn trên validation với call budget mặc định
+25%. Random dùng đúng call rate của Entropy trên test.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo RQ8_LIMIT=200 ./scripts/rq8_routing.sh audit
+
+# Gọi Ollama và tạo cache; chạy lại cùng lệnh để resume.
+CITY=Tokyo RQ8_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq8_routing.sh collect
+
+# Không gọi LLM; ba seed tái sử dụng cùng Always cache.
+for seed in 42 43 44; do
+  CITY=Tokyo RQ8_LIMIT=200 SEED="$seed" ./scripts/rq8_routing.sh evaluate
+done
+
+CITY=Tokyo RQ8_LIMIT=200 RQ8_SEEDS="42 43 44" ./scripts/rq8_routing.sh aggregate
+```
+
+`collect` yêu cầu `evidence_cache.jsonl` và `calibration.json` của matched Hybrid
+run. Chỉ rõ run khác bằng `HYBRID_RUN_DIR=/path/to/city/run`. Output tổng hợp là
+`results/beliefmove-evo/aggregated/rq8_summary.json` và `ideas/results_rq8.md`.
+Run giới hạn 200 query là bounded experiment, không phải full-query result.
+
 ## 11. Baselines
 
 ```bash
