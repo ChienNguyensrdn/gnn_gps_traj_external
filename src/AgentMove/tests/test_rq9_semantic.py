@@ -1,6 +1,7 @@
 import unittest
 
 from hybrid.free_text_rerank import _metrics
+from hybrid.rq9_aggregate import ranking_sensitivity
 from hybrid.rq9_semantic_rerank import donor_histories, perturb, random_poi_context, shuffled
 
 
@@ -33,6 +34,13 @@ class RQ9SemanticTest(unittest.TestCase):
         row = {"true_rank": 3, "true_in_top_k": True, "valid": True, "input_tokens": 10,
                "output_tokens": 2, "api_calls": 1, "latency_seconds": 0.5}
         self.assertEqual(_metrics([row])["candidate_recall"], 1.0)
+
+    def test_ranking_sensitivity_detects_top1_change(self):
+        left = [{"ranking_top_k": ["a", "b", "c"]}]
+        right = [{"ranking_top_k": ["b", "a", "c"]}]
+        result = ranking_sensitivity(left, right)
+        self.assertEqual(result["top1_change_rate"], 1.0)
+        self.assertEqual(result["ranking_change_rate"], 1.0)
 
 
 if __name__ == "__main__": unittest.main()
