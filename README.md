@@ -400,6 +400,29 @@ Evaluator đồng thời sinh budget sweep 10/25/50%, oracle-gain upper bound v�
 paired significance với Holm correction; các bước này tái sử dụng cache, không
 gọi lại Ollama.
 
+### RQ9 — Semantic knowledge verification
+
+RQ9 dùng matched one-axis corruption trên cùng Neural-CGM top-10 candidates.
+Memory variants giữ context thật; context variants giữ memory thật. Mỗi variant
+có LLM cache riêng để tránh dùng evidence thật cho prompt đã corruption.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo RQ9_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq9_semantic.sh audit
+
+# Gọi Ollama cho 7 variants; chạy lại cùng lệnh để resume.
+CITY=Tokyo RQ9_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq9_semantic.sh collect
+
+SIGNIFICANCE_ITERATIONS=10000 CITY=Tokyo RQ9_LIMIT=200 \
+  OLLAMA_MODEL=qwen2:7b ./scripts/rq9_semantic.sh aggregate
+```
+
+Các biến thể là `memory-true`, `memory-shuffled`, `memory-random-user`,
+`memory-none`, `context-shuffled`, `context-random-poi`, `context-none`.
+Aggregator thực hiện paired test giữa true và từng corruption, rồi áp dụng Holm
+correction. Output: `results/beliefmove-evo/aggregated/rq9_summary.json` và
+`ideas/results_rq9.md`. Run 200 query vẫn chỉ là bounded experiment.
+
 ## 11. Baselines
 
 ```bash

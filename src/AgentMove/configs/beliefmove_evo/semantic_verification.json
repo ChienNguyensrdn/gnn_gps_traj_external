@@ -1,0 +1,17 @@
+{
+  "rq": "RQ9",
+  "protocol": "one-axis semantic prompt corruption",
+  "reference": "memory-true",
+  "variants": [
+    "memory-true",
+    "memory-shuffled",
+    "memory-random-user",
+    "memory-none",
+    "context-shuffled",
+    "context-random-poi",
+    "context-none"
+  ],
+  "top_k": 10,
+  "perturbation_seed": 42,
+  "test_tuning": false
+}
