@@ -34,9 +34,19 @@ def load_runs(root: Path, seeds: list[int]):
     return rows
 
 
-def paired(root: Path, seeds: list[int], iterations: int, random_seed: int):
+def paired(root: Path, seeds: list[int], iterations: int, random_seed: int, selected_weights: dict):
     rows = []
     for comparison_index, (target, reference) in enumerate(COMPARISONS):
+        # A validation-selected weight of zero defines the exact static model.
+        # Do not turn round-off from an unnecessary re-normalization into a
+        # statistically significant effect on a very large query set.
+        equivalent = reference == "B0-static" and all(
+            float(weight) == 0.0 for weight in selected_weights[target])
+        if equivalent:
+            rows.extend({"comparison": f"{target}-vs-{reference}", "metric": metric,
+                         "effect_favoring_first": 0.0, "bootstrap_ci95": [0.0, 0.0],
+                         "permutation_p": 1.0} for metric in METRICS)
+            continue
         differences = []
         for seed in seeds:
             folder = root / f"seed-{seed}" / "rq7"
@@ -89,11 +99,12 @@ def main():
     parser.add_argument("--iterations", type=int, default=10000); parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--output", type=Path, required=True); parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args(); runs = load_runs(args.artifacts_root, args.seeds)
+    selected_weights = {variant: [row["selected_weights"][variant] for row in runs] for variant in VARIANTS}
     payload = {"rq": "RQ7", "seeds": args.seeds,
-               "selected_weights": {variant: [row["selected_weights"][variant] for row in runs] for variant in VARIANTS},
+               "selected_weights": selected_weights,
                "variants": {variant: {metric: summary([row["test_metrics"][variant][metric] for row in runs])
                                       for metric in SUMMARY_METRICS} for variant in VARIANTS},
-               "paired_tests": paired(args.artifacts_root, args.seeds, args.iterations, args.random_seed),
+               "paired_tests": paired(args.artifacts_root, args.seeds, args.iterations, args.random_seed, selected_weights),
                "gate": "ready"}
     args.output.parent.mkdir(parents=True, exist_ok=True); args.output.write_text(json.dumps(payload, indent=2) + "\n")
     args.markdown.parent.mkdir(parents=True, exist_ok=True); args.markdown.write_text(render(payload))

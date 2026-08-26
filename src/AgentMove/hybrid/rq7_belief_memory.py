@@ -119,7 +119,7 @@ def stream_variants(model, queries, specifications, batch_size, device, seed,
                 history = None; transition = None
                 for variant, weight in specifications:
                     previous, previous_trajectory = states[(variant, weight)]
-                    if variant == "B0-static": current = base
+                    if variant == "B0-static" or weight == 0.0: current = base
                     elif variant == "B1-history":
                         if history is None: history = smoothed_counts(prefix, global_prior, smoothing)
                         current = fuse(base, history, weight)
@@ -149,7 +149,7 @@ def variant_arrays(base, queries, variant, weight, global_prior, transitions, sm
     previous = None; previous_trajectory = None
     for index, query in enumerate(queries):
         trajectory = query["trajectory_id"]; prefix = query["pois"][:query["step"]]
-        if variant == "B0-static": current = np.asarray(base[index], dtype=np.float64)
+        if variant == "B0-static" or weight == 0.0: current = np.asarray(base[index], dtype=np.float64)
         elif variant == "B1-history":
             current = fuse(base[index], smoothed_counts(prefix, global_prior, smoothing), weight)
         elif variant == "B2-sequential":
