@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List
 import numpy as np
 import pandas as pd
 
+from .checkpoint_models import build_checkpoint_model
 from .neural_cgm import ModelConfig, _batches, _recall, _torch, build_examples, build_model
 
 
@@ -90,8 +91,7 @@ def train(args) -> Dict[str, float]:
     torch = _torch()
     random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
     teacher_checkpoint = torch.load(args.teacher_checkpoint, map_location="cpu", weights_only=False)
-    teacher_config = ModelConfig(**teacher_checkpoint["config"])
-    teacher = build_model(teacher_config)
+    teacher, teacher_config = build_checkpoint_model(teacher_checkpoint)
     teacher.load_state_dict(teacher_checkpoint["model_state"])
     student_config = ModelConfig(
         teacher_config.num_pois, teacher_config.num_users, args.poi_dim,

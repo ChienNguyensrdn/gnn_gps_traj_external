@@ -423,6 +423,31 @@ Aggregator thực hiện paired test giữa true và từng corruption, rồi á
 correction. Output: `results/beliefmove-evo/aggregated/rq9_summary.json` và
 `ideas/results_rq9.md`. Run 200 query vẫn chỉ là bounded experiment.
 
+### RQ10 — Độ bền theo kiến trúc teacher
+
+RQ10 giữ cố định split, candidate set, seed và kiến trúc student, chỉ thay teacher
+giữa GRU và Transformer. `none` là control chỉ học cross-entropy. Checkpoint tốt
+nhất được chọn trên validation; test chỉ dùng để báo cáo cuối cùng.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo ./scripts/rq10_teacher_robustness.sh audit
+
+# Chạy đầy đủ teacher, student và test cho seed 42, 43, 44.
+CITY=Tokyo DEVICE=cuda BATCH_SIZE=128 \
+  ./scripts/rq10_teacher_robustness.sh run-seeds
+
+CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 \
+  ./scripts/rq10_teacher_robustness.sh aggregate
+```
+
+Có thể chạy/resume từng bước bằng `TEACHER=gru|transformer` với
+`train-teacher`, hoặc `TEACHER=none|gru|transformer` với `train-student` và
+`evaluate`. Output tổng hợp là
+`results/beliefmove-evo/aggregated/rq10_summary.json` và
+`ideas/results_rq10.md`. PMT/UniTraj chưa được tính là baseline hợp lệ cho đến
+khi adapter preprocessing và candidate space được xác minh.
+
 ## 11. Baselines
 
 ```bash

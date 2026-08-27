@@ -1,0 +1,11 @@
+{
+  "rq": "RQ10",
+  "teachers": ["gru", "transformer"],
+  "student": {"architecture": "gru", "poi_dim": 32, "user_dim": 16, "time_dim": 8},
+  "distillation": {"temperature": 2.0, "kd": 1.0, "trajectory": 1.0, "velocity": 1.0, "temporal": 1.0},
+  "control": "none",
+  "seeds": [42, 43, 44],
+  "selection_split": "validation",
+  "evaluation_split": "test",
+  "external_adapters": {"pmt": "unverified", "unitraj": "unverified"}
+}

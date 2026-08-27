@@ -8,8 +8,9 @@ import numpy as np
 import pandas as pd
 
 from .dual_evolution import _device, corrupt_examples
+from .checkpoint_models import build_checkpoint_model
 from .metrics import expected_calibration_error
-from .neural_cgm import ModelConfig, _batches, _torch, build_examples, build_model
+from .neural_cgm import _batches, _torch, build_examples
 
 
 def prediction_arrays(logits: np.ndarray, labels: np.ndarray) -> dict[str, np.ndarray]:
@@ -62,7 +63,7 @@ def resolve_order_mode(checkpoint: dict, requested: str) -> str:
 
 def evaluate(args) -> dict[str, float]:
     torch = _torch(); checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model = build_model(ModelConfig(**checkpoint["config"])); model.load_state_dict(checkpoint["model_state"])
+    model, _ = build_checkpoint_model(checkpoint); model.load_state_dict(checkpoint["model_state"])
     device = _device(torch, args.device); model.to(device).eval()
     order_mode = resolve_order_mode(checkpoint, args.order_mode)
     examples = corrupt_examples(
