@@ -67,61 +67,93 @@ Tokens/query của memory-none chỉ `581.91`, thấp hơn nhiều so với `126
 memory-true. Prompt length vì vậy là một confound thực sự, không chỉ là metric
 hiệu năng phụ.
 
-## 5. Phân tích bổ sung trong script đã điều chỉnh
+## 5. Jointly-valid paired analysis
 
-Aggregator RQ9 hiện bổ sung bốn nhóm kiểm tra offline từ cache có sẵn:
+Số query mà cả true và corruption đều sinh output hợp lệ nằm trong khoảng
+`133–156`:
 
-- **All-query paired test:** kết quả primary trên toàn bộ 200 queries.
-- **Jointly-valid paired test:** chỉ giữ query mà cả true và corruption đều có
-  output hợp lệ.
-- **Invalid-rate paired test:** kiểm tra chênh lệch format failure bằng paired
-  bootstrap/permutation và Holm correction.
-- **Ranking sensitivity:** top-1 change rate, full ranking change rate và mean
-  Spearman agreement trên top-10.
+| Comparison | Jointly-valid queries | R@1 effect | R@5 effect | MRR effect | Kết luận sau Holm |
+|---|---:|---:|---:|---:|---|
+| true vs memory-shuffled | 143 | 0.000000 | +0.006993 | −0.000583 | Không significant |
+| true vs memory-random-user | 133 | 0.000000 | +0.007519 | +0.003008 | Không significant |
+| true vs memory-none | 151 | −0.006623 | −0.006623 | −0.005030 | Không significant |
+| true vs context-shuffled | 149 | −0.013423 | 0.000000 | −0.009508 | Không significant |
+| true vs context-random-poi | 149 | −0.006711 | +0.006711 | −0.002796 | Không significant |
+| true vs context-none | 156 | −0.006410 | +0.006410 | −0.002671 | Không significant |
 
-Ngoài ra report JSON tách metrics của valid outputs và fallback outputs cho từng
-variant. Các phân tích này không gọi lại LLM và không thay đổi cache gốc.
+Tất cả jointly-valid Holm p đều bằng `1`. Việc loại bỏ output lỗi không làm
+xuất hiện semantic gain bị che khuất. Negative result vì vậy mạnh hơn phân tích
+all-query: với các output hợp lệ, true memory/context vẫn không vượt corruption.
 
-## 6. Cách diễn giải jointly-valid result
+## 6. Kiểm định invalid-output rate
 
-- Nếu jointly-valid vẫn không significant, negative result semantic được củng
-  cố: memory/context hiện tại không được mô hình sử dụng hiệu quả.
-- Nếu jointly-valid khác all-query, format reliability/fallback là nguyên nhân
-  chính che khuất tác động semantic.
-- Nếu ranking change rate cao nhưng quality không đổi, LLM nhạy với corruption
-  nhưng thay đổi không theo hướng cải thiện ground-truth ranking.
-- Nếu ranking change rate thấp, prompt semantic gần như bị LLM bỏ qua.
+Positive effect nghĩa là true có invalid rate thấp hơn corruption. Hai khác biệt
+có ý nghĩa thống kê đều mang dấu âm:
 
-## 7. Kết luận hiện tại
+| Comparison | Effect favoring true | 95% CI | Holm p | Kết luận |
+|---|---:|---:|---:|---|
+| true vs memory-shuffled | −0.030 | −0.090–0.030 | 1 | Không significant |
+| true vs memory-random-user | +0.010 | −0.060–0.080 | 1 | Không significant |
+| true vs memory-none | **−0.125** | **−0.185–−0.065** | **0.0019998** | memory-none ít lỗi hơn |
+| true vs context-shuffled | +0.005 | −0.040–0.045 | 1 | Không significant |
+| true vs context-random-poi | −0.060 | −0.115–−0.005 | 0.19558 | Không significant sau Holm |
+| true vs context-none | **−0.110** | **−0.160–−0.065** | **0.00119988** | context-none ít lỗi hơn |
+
+Loại bỏ memory giảm invalid rate 12.5 điểm phần trăm; loại bỏ context giảm 11
+điểm phần trăm. Cả hai đều significant sau Holm correction. Điều này xác nhận
+prompt length/complexity gây format-reliability cost thực sự.
+
+## 7. Ranking sensitivity
+
+| Corruption | Top-1 change rate | Ranking change rate | Mean Spearman top-10 |
+|---|---:|---:|---:|
+| memory-shuffled | 0.135 | 0.290 | 0.890667 |
+| memory-random-user | 0.230 | 0.415 | 0.808909 |
+| memory-none | **0.255** | **0.415** | 0.824485 |
+| context-shuffled | 0.085 | 0.190 | 0.931394 |
+| context-random-poi | 0.105 | 0.240 | 0.902545 |
+| context-none | 0.110 | 0.250 | 0.905515 |
+
+Memory corruption làm ranking thay đổi nhiều hơn context corruption. Như vậy
+LLM không hoàn toàn bỏ qua semantic inputs: nó nhạy với thay đổi prompt. Tuy
+nhiên, các thay đổi ranking không liên hệ ổn định với ground-truth quality, nên
+sensitivity chưa chuyển thành useful semantic contribution.
+
+## 8. Kết luận RQ9
 
 Claim an toàn:
 
-> Trong bounded experiment trên 200 queries của TIST2015–Tokyo, không có bằng
-> chứng thống kê rằng personal memory hoặc context/world prompt hiện tại cải
-> thiện next-location ranking. Kết quả bị confound bởi invalid-output rate phụ
-> thuộc độ dài prompt; do đó jointly-valid analysis cần được ưu tiên khi diễn
-> giải semantic contribution.
+> Trong bounded experiment trên 200 queries của TIST2015–Tokyo, personal memory
+> và context corruption làm thay đổi LLM ranking nhưng không gây thay đổi
+> ground-truth quality có ý nghĩa thống kê, kể cả trên jointly-valid queries.
+> Memory/context thật đồng thời làm tăng format failure so với prompt loại bỏ
+> các thành phần này. Do đó semantic inputs hiện tại tạo sensitivity và chi phí,
+> nhưng chưa chứng minh được predictive utility.
 
 Không nên claim memory/context vô dụng nói chung, vì kết quả chỉ áp dụng cho
 prompt, model, candidate set và bounded Tokyo protocol hiện tại.
 
-## 8. Hướng phát triển
+## 9. Hướng phát triển
 
 1. Dùng constrained JSON/schema decoding để giảm invalid-output rate.
 2. Nén memory/context trước khi đưa vào prompt để kiểm soát token length.
 3. So sánh true/corruption với cùng prompt length bằng padding hoặc matched
    retrieval count.
-4. Chỉ mở rộng full-query/multi-city sau khi jointly-valid analysis xác nhận có
-   semantic signal.
+4. Học hoặc chọn memory/context evidence dựa trên validation gain thay vì đưa
+   toàn bộ lịch sử dài vào prompt.
+5. Chỉ mở rộng full-query/multi-city sau khi prompt rút gọn vừa giảm invalid
+   rate vừa vượt corruption controls.
 
-## 9. Publication gate
+## 10. Publication gate
 
 - City: `Tokyo` — bounded run hoàn thành.
 - Test queries: `200` — chưa phải full-query.
 - LLM: `qwen2:7b`.
 - One-axis corruption — đạt.
 - All-query paired test + Holm — đạt.
-- Jointly-valid/invalid-rate/ranking-sensitivity scripts — đã chuẩn bị; cần chạy
-  lại aggregate để điền kết quả.
+- Jointly-valid paired test + Holm — đạt.
+- Invalid-rate paired test + Holm — đạt.
+- Ranking sensitivity — đạt.
+- Format reliability claim — được hỗ trợ cho memory-none/context-none.
 - Main semantic contribution claim — chưa được hỗ trợ.
 - TIST2015 12-city gate — chưa hoàn thành.
