@@ -10,7 +10,7 @@ require_file() { [[ -f "$1" ]] || { echo "Missing required file: $1" >&2; exit 2
 audit() {
   [[ -x "$PYTHON_BIN" ]] || { echo "Missing Python: $PYTHON_BIN" >&2; return 2; }
   require_file "$BASE/getnext/train.csv"; require_file "$BASE/getnext/val.csv"
-  require_file "$BASE/getnext/test.csv"; require_file "$BASE/neural_cgm/candidate_ids.json"
+  require_file "$BASE/getnext/test.csv"; require_file "$BASE/candidate_ids.json"
   echo "city=$CITY seed=$SEED teacher=$TEACHER"; echo "output=$ROOT"
   echo "matched_protocol=same splits,candidates,seeds,student architecture"
 }
@@ -27,7 +27,7 @@ train_teacher() {
     *) echo "TEACHER must be gru, transformer, pmt or unitraj" >&2; exit 2 ;;
   esac
   "$PYTHON_BIN" -m "$module" "${command[@]}" --train-csv "$BASE/getnext/train.csv" \
-    --validation-csv "$BASE/getnext/val.csv" --candidate-ids "$BASE/neural_cgm/candidate_ids.json" \
+    --validation-csv "$BASE/getnext/val.csv" --candidate-ids "$BASE/candidate_ids.json" \
     --output "$output" --epochs "${TEACHER_EPOCHS:-10}" --batch-size "${BATCH_SIZE:-128}" \
     --learning-rate "${LEARNING_RATE:-0.001}" --seed "$SEED" --device "${DEVICE:-auto}"
 }
