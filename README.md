@@ -432,6 +432,7 @@ nhất được chọn trên validation; test chỉ dùng để báo cáo cuối
 ```bash
 cd src/AgentMove
 CITY=Tokyo ./scripts/rq10_teacher_robustness.sh audit
+CITY=Tokyo ./scripts/rq10_teacher_robustness.sh status
 
 # Chạy đầy đủ teacher, student và test cho seed 42, 43, 44.
 CITY=Tokyo DEVICE=cuda BATCH_SIZE=128 \
@@ -447,6 +448,8 @@ Có thể chạy/resume từng bước bằng `TEACHER=gru|transformer` với
 `results/beliefmove-evo/aggregated/rq10_summary.json` và
 `ideas/results_rq10.md`. PMT/UniTraj chưa được tính là baseline hợp lệ cho đến
 khi adapter preprocessing và candidate space được xác minh.
+`status` liệt kê riêng checkpoint, test metrics và per-query predictions còn
+thiếu. `aggregate` sẽ dừng sớm với hướng dẫn resume nếu publication gate chưa đủ.
 
 ## 11. Baselines
 

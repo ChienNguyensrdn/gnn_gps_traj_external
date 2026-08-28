@@ -63,6 +63,34 @@ evaluate() {
     *) echo "TEACHER must be none, gru or transformer" >&2; exit 2 ;;
   esac
 }
+status() {
+  local seed architecture path missing=0
+  echo "RQ10 status city=$CITY root=$ROOT seeds=${RQ10_SEEDS:-42 43 44}"
+  for seed in ${RQ10_SEEDS:-42 43 44}; do
+    for architecture in gru transformer; do
+      for path in \
+        "$ROOT/teachers/$architecture/seed-$seed/best.pt" \
+        "$ROOT/teachers/$architecture/seed-$seed/test.metrics.json" \
+        "$ROOT/teachers/$architecture/seed-$seed/test.predictions.npz"; do
+        if [[ -f "$path" ]]; then echo "ready   $path"; else echo "missing $path"; missing=$((missing + 1)); fi
+      done
+    done
+    for architecture in none gru transformer; do
+      for path in \
+        "$ROOT/students/$architecture/seed-$seed/best.pt" \
+        "$ROOT/students/$architecture/seed-$seed/test.metrics.json" \
+        "$ROOT/students/$architecture/seed-$seed/test.predictions.npz"; do
+        if [[ -f "$path" ]]; then echo "ready   $path"; else echo "missing $path"; missing=$((missing + 1)); fi
+      done
+    done
+  done
+  if (( missing > 0 )); then
+    echo "RQ10 incomplete: $missing artifact(s) missing." >&2
+    echo "Resume safely with: CITY=$CITY DEVICE=${DEVICE:-cuda} BATCH_SIZE=${BATCH_SIZE:-128} $0 run-seeds" >&2
+    return 2
+  fi
+  echo "RQ10 complete: all required checkpoints, metrics and paired predictions are ready."
+}
 run_seeds() {
   local seed architecture
   for seed in ${RQ10_SEEDS:-42 43 44}; do
@@ -74,12 +102,13 @@ run_seeds() {
   done
 }
 aggregate() {
+  status || { echo "Aggregation stopped; incomplete runs must not be reported as complete RQ10." >&2; exit 2; }
   "$PYTHON_BIN" -m hybrid.rq10_aggregate --root "$ROOT" --seeds ${RQ10_SEEDS:-42 43 44} \
     --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
     --output results/beliefmove-evo/aggregated/rq10_summary.json --markdown ../../ideas/results_rq10.md
 }
 case "$ACTION" in
   audit) audit ;; train-teacher) train_teacher ;; train-student) train_student ;; evaluate) evaluate ;;
-  run-seeds) run_seeds ;; aggregate) aggregate ;;
-  *) echo "Usage: $0 <audit|train-teacher|train-student|evaluate|run-seeds|aggregate>" >&2; exit 2 ;;
+  status) status ;; run-seeds) run_seeds ;; aggregate) aggregate ;;
+  *) echo "Usage: $0 <audit|status|train-teacher|train-student|evaluate|run-seeds|aggregate>" >&2; exit 2 ;;
 esac
