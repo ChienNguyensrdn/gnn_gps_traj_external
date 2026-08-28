@@ -451,6 +451,31 @@ khi adapter preprocessing và candidate space được xác minh.
 `status` liệt kê riêng checkpoint, test metrics và per-query predictions còn
 thiếu. `aggregate` sẽ dừng sớm với hướng dẫn resume nếu publication gate chưa đủ.
 
+### RQ11 — Calibration
+
+RQ11 tách hai protocol để tránh so sánh sai: `distillation` dùng last-query của
+RQ10; `bayesian` dùng all-prefix của RQ7. Temperature scaling chỉ fit trên
+validation. Với Bayesian, transition/prior vẫn chỉ fit train và B3 weight được
+lấy từ validation artifact của RQ7.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo ./scripts/rq11_calibration.sh audit
+
+CITY=Tokyo DEVICE=cuda BATCH_SIZE=128 \
+  ./scripts/rq11_calibration.sh run-seeds
+
+CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 ECE_BOOTSTRAP_ITERATIONS=1000 \
+  ./scripts/rq11_calibration.sh aggregate
+```
+
+`status` kiểm tra đủ metrics và predictions trước/sau calibration cho seed
+42–44. Aggregator báo NLL, Brier, ECE, adaptive ECE, confidence gap, paired
+NLL/Brier significance, bootstrap CI cho ECE và hai reliability diagram SVG.
+Output: `results/beliefmove-evo/aggregated/rq11_summary.json`,
+`results/beliefmove-evo/aggregated/rq11_*_reliability.svg` và
+`ideas/results_rq11.md`.
+
 ## 11. Baselines
 
 ```bash
