@@ -454,9 +454,9 @@ thiếu. `aggregate` sẽ dừng sớm với hướng dẫn resume nếu publica
 ### RQ11 — Calibration
 
 RQ11 tách hai protocol để tránh so sánh sai: `distillation` dùng last-query của
-RQ10; `bayesian` dùng all-prefix của RQ7. Temperature scaling chỉ fit trên
-validation. Với Bayesian, transition/prior vẫn chỉ fit train và B3 weight được
-lấy từ validation artifact của RQ7.
+RQ10; `bayesian` dùng all-prefix của RQ7. Bốn chiến lược gồm identity `T=1` và
+temperature tối ưu riêng NLL, Brier, ECE; tất cả chỉ fit trên validation. Với
+Bayesian, transition/prior vẫn chỉ fit train và B3 weight lấy từ validation RQ7.
 
 ```bash
 cd src/AgentMove
@@ -469,9 +469,10 @@ CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 ECE_BOOTSTRAP_ITERATIONS=1000 \
   ./scripts/rq11_calibration.sh aggregate
 ```
 
-`status` kiểm tra đủ metrics và predictions trước/sau calibration cho seed
-42–44. Aggregator báo NLL, Brier, ECE, adaptive ECE, confidence gap, paired
-NLL/Brier significance, bootstrap CI cho ECE và hai reliability diagram SVG.
+`status` kiểm tra đủ metrics và predictions identity/NLL/Brier/ECE cho seed
+42–44. Aggregator báo trade-off đa mục tiêu, paired test cho tác động calibration
+và so sánh trực tiếp GRU/Transformer–None, B3–B0, bootstrap CI cho ECE và hai
+reliability diagram SVG. Temperature scaling không đổi ranking.
 Output: `results/beliefmove-evo/aggregated/rq11_summary.json`,
 `results/beliefmove-evo/aggregated/rq11_*_reliability.svg` và
 `ideas/results_rq11.md`.

@@ -96,25 +96,39 @@ def belief_batches(model, frame: pd.DataFrame, user_map: dict, batch_size: int, 
         yield np.log(np.clip(probabilities, 1e-12, 1.0)), labels.cpu().numpy()
 
 
-def fit_temperature(batches, temperatures: list[float]) -> float:
-    losses = np.zeros(len(temperatures)); count = 0
+def fit_calibrators(batches, temperatures: list[float], bins: int) -> tuple[dict[str, float], dict]:
+    if 1.0 not in temperatures: raise ValueError("temperature grid must contain identity T=1")
+    nll = np.zeros(len(temperatures)); brier = np.zeros(len(temperatures)); count = 0
+    confidence_rows = [[] for _ in temperatures]; correct_rows = []
     for scores, labels in batches:
-        count += len(labels)
+        count += len(labels); top1 = scores.argmax(axis=1); correct_rows.append((top1 == labels).astype(np.int8))
         for index, temperature in enumerate(temperatures):
             scaled = scores / temperature; logp = scaled - _logsumexp(scaled)
-            losses[index] -= logp[np.arange(len(labels)), labels].sum()
+            probabilities = np.exp(logp); true = probabilities[np.arange(len(labels)), labels]
+            nll[index] -= logp[np.arange(len(labels)), labels].sum()
+            brier[index] += (np.sum(probabilities * probabilities, axis=1) - 2 * true + 1).sum()
+            confidence_rows[index].append(probabilities.max(axis=1).astype(np.float32))
     if count == 0: raise ValueError("validation split produced zero calibration examples")
-    return float(temperatures[int(np.argmin(losses / count))])
+    correct = np.concatenate(correct_rows); ece = []
+    for rows in confidence_rows:
+        confidence = np.concatenate(rows); values = reliability(confidence, correct, bins, False)
+        ece.append(sum(row["count"] * abs(row["accuracy"] - row["confidence"]) for row in values if row["count"]) / count)
+    scores = {"nll": nll / count, "brier": brier / count, "ece": np.asarray(ece)}
+    select = lambda metric: min(range(len(temperatures)), key=lambda index: (scores[metric][index], abs(temperatures[index] - 1.0)))
+    selected = {"identity": 1.0, **{metric: float(temperatures[select(metric)]) for metric in ("nll", "brier", "ece")}}
+    trace = {metric: {str(temperature): float(value) for temperature, value in zip(temperatures, values)}
+             for metric, values in scores.items()}
+    return selected, trace
 
 
-def test_outputs(batches, temperature: float) -> tuple[dict, dict]:
-    before_rows, after_rows = [], []
+def test_outputs(batches, temperatures: dict[str, float]) -> dict[str, dict[str, np.ndarray]]:
+    rows = {name: [] for name in temperatures}
     for scores, batch_labels in batches:
-        before_rows.append(arrays_from_probabilities(normalize_log_scores(scores, 1.0), batch_labels))
-        after_rows.append(arrays_from_probabilities(normalize_log_scores(scores, temperature), batch_labels))
-    if not before_rows: raise ValueError("test split produced zero calibration examples")
-    combine = lambda rows: {key: np.concatenate([row[key] for row in rows]) for key in rows[0]}
-    return combine(before_rows), combine(after_rows)
+        for name, temperature in temperatures.items():
+            rows[name].append(arrays_from_probabilities(normalize_log_scores(scores, temperature), batch_labels))
+    if not rows["identity"]: raise ValueError("test split produced zero calibration examples")
+    return {name: {key: np.concatenate([row[key] for row in values]) for key in values[0]}
+            for name, values in rows.items()}
 
 
 def evaluate(args):
@@ -136,19 +150,21 @@ def evaluate(args):
         factory = lambda frame: belief_batches(model, frame, checkpoint["user_map"], args.batch_size, device,
                                                args.seed, args.variant, weight, prior, transitions, smoothing)
         protocol_details = {"belief_weight": weight, "belief_weight_source": "RQ7 validation", "belief_statistics_fit": "train"}
-    temperature = fit_temperature(factory(validation), temperatures)
-    before, after = test_outputs(factory(test), temperature)
+    bins = int(config["reliability_bins"])
+    selected, validation_trace = fit_calibrators(factory(validation), temperatures, bins)
+    outputs = test_outputs(factory(test), selected)
     output = Path(args.output_dir); output.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(output / "before.predictions.npz", **before, query_index=np.arange(len(before["labels"])))
-    np.savez_compressed(output / "after.predictions.npz", **after, query_index=np.arange(len(after["labels"])))
+    for name, arrays in outputs.items():
+        np.savez_compressed(output / f"{name}.predictions.npz", **arrays, query_index=np.arange(len(arrays["labels"])))
     result = {"rq": "RQ11", "variant": args.variant, "protocol": args.protocol, "seed": args.seed,
-              "calibrator": "temperature_scaling", "temperature": temperature,
+              "calibrator": "validation-objective temperature scaling", "temperatures": selected,
+              "validation_objective_trace": validation_trace,
               "temperature_fit_split": "validation", "evaluation_split": "test",
-              "metrics_before": summarize(before, int(config["reliability_bins"])),
-              "metrics_after": summarize(after, int(config["reliability_bins"])), **protocol_details}
+              "metrics": {name: summarize(arrays, bins) for name, arrays in outputs.items()}, **protocol_details}
     (output / "rq11.metrics.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"output": str(output), "temperature": temperature,
-                      "nll_before": result["metrics_before"]["nll"], "nll_after": result["metrics_after"]["nll"]}))
+    print(json.dumps({"output": str(output), "temperatures": selected,
+                      "identity": {metric: result["metrics"]["identity"][metric] for metric in ("nll", "brier", "ece")},
+                      "optimized": {metric: result["metrics"][metric][metric] for metric in ("nll", "brier", "ece")}}))
     return result
 
 

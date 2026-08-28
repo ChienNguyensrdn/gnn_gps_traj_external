@@ -20,7 +20,9 @@ evaluate_distillation() {
   for variant in none gru transformer; do
     checkpoint="$RQ10_ROOT/students/$variant/seed-$SEED/best.pt"; output="$ROOT/distillation/$variant/seed-$SEED"
     require_file "$checkpoint"
-    if [[ -f "$output/rq11.metrics.json" && -f "$output/before.predictions.npz" && -f "$output/after.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
+    if [[ -f "$output/rq11.metrics.json" && -f "$output/identity.predictions.npz" && \
+          -f "$output/nll.predictions.npz" && -f "$output/brier.predictions.npz" && \
+          -f "$output/ece.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
       echo "skip existing $output"; continue
     fi
     "$PYTHON_BIN" -m hybrid.rq11_calibration --checkpoint "$checkpoint" --validation-csv "$BASE/getnext/val.csv" \
@@ -33,7 +35,9 @@ evaluate_bayesian() {
   require_file "$checkpoint"; require_file "$rq7_metrics"
   for variant in B0-static B3-dbn; do
     output="$ROOT/bayesian/$variant/seed-$SEED"
-    if [[ -f "$output/rq11.metrics.json" && -f "$output/before.predictions.npz" && -f "$output/after.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
+    if [[ -f "$output/rq11.metrics.json" && -f "$output/identity.predictions.npz" && \
+          -f "$output/nll.predictions.npz" && -f "$output/brier.predictions.npz" && \
+          -f "$output/ece.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
       echo "skip existing $output"; continue
     fi
     "$PYTHON_BIN" -m hybrid.rq11_calibration --checkpoint "$checkpoint" --train-csv "$BASE/getnext/train.csv" \
@@ -50,8 +54,10 @@ status() {
       if [[ "$group" == distillation ]]; then variants="none gru transformer"; else variants="B0-static B3-dbn"; fi
       for variant in $variants; do
         for path in "$ROOT/$group/$variant/seed-$seed/rq11.metrics.json" \
-                    "$ROOT/$group/$variant/seed-$seed/before.predictions.npz" \
-                    "$ROOT/$group/$variant/seed-$seed/after.predictions.npz"; do
+                    "$ROOT/$group/$variant/seed-$seed/identity.predictions.npz" \
+                    "$ROOT/$group/$variant/seed-$seed/nll.predictions.npz" \
+                    "$ROOT/$group/$variant/seed-$seed/brier.predictions.npz" \
+                    "$ROOT/$group/$variant/seed-$seed/ece.predictions.npz"; do
           if [[ -f "$path" ]]; then echo "ready   $path"; else echo "missing $path"; missing=$((missing + 1)); fi
         done
       done
