@@ -47,8 +47,13 @@ train_student() {
     --lambda-velocity "${weights[2]}" --lambda-temporal "${weights[3]}"
 }
 evaluate_one() {
-  local group="$1" name="$2" checkpoint="$3" output="$ROOT/$group/$name/seed-$SEED"
+  local group="$1" name="$2" checkpoint="$3" output
+  output="$ROOT/$group/$name/seed-$SEED"
   require_file "$checkpoint"
+  if [[ -f "$output/test.metrics.json" && -f "$output/test.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
+    echo "skip existing evaluation $output"
+    return
+  fi
   "$PYTHON_BIN" -m hybrid.evaluate_student --checkpoint "$checkpoint" --test-csv "$BASE/getnext/test.csv" \
     --output "$output/test.metrics.json" --predictions-output "$output/test.predictions.npz" \
     --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED"
