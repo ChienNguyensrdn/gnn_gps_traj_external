@@ -96,18 +96,24 @@ def belief_batches(model, frame: pd.DataFrame, user_map: dict, batch_size: int, 
         yield np.log(np.clip(probabilities, 1e-12, 1.0)), labels.cpu().numpy()
 
 
-def fit_calibrators(batches, temperatures: list[float], bins: int) -> tuple[dict[str, float], dict]:
+def fit_calibrators(batches, temperatures: list[float], bins: int, device="cpu",
+                    progress_every: int = 50) -> tuple[dict[str, float], dict]:
     if 1.0 not in temperatures: raise ValueError("temperature grid must contain identity T=1")
+    torch = _torch(); compute_device = torch.device(device)
     nll = np.zeros(len(temperatures)); brier = np.zeros(len(temperatures)); count = 0
     confidence_rows = [[] for _ in temperatures]; correct_rows = []
-    for scores, labels in batches:
-        count += len(labels); top1 = scores.argmax(axis=1); correct_rows.append((top1 == labels).astype(np.int8))
+    for batch_index, (scores, labels) in enumerate(batches, 1):
+        score_tensor = torch.as_tensor(scores, dtype=torch.float32, device=compute_device)
+        label_tensor = torch.as_tensor(labels, dtype=torch.long, device=compute_device)
+        count += len(labels); top1 = score_tensor.argmax(dim=1); correct_rows.append((top1 == label_tensor).byte().cpu().numpy())
         for index, temperature in enumerate(temperatures):
-            scaled = scores / temperature; logp = scaled - _logsumexp(scaled)
-            probabilities = np.exp(logp); true = probabilities[np.arange(len(labels)), labels]
-            nll[index] -= logp[np.arange(len(labels)), labels].sum()
-            brier[index] += (np.sum(probabilities * probabilities, axis=1) - 2 * true + 1).sum()
-            confidence_rows[index].append(probabilities.max(axis=1).astype(np.float32))
+            logp = torch.nn.functional.log_softmax(score_tensor / temperature, dim=1); probabilities = logp.exp()
+            true = probabilities[torch.arange(len(labels), device=compute_device), label_tensor]
+            nll[index] -= float(logp[torch.arange(len(labels), device=compute_device), label_tensor].sum().cpu())
+            brier[index] += float(((probabilities * probabilities).sum(dim=1) - 2 * true + 1).sum().cpu())
+            confidence_rows[index].append(probabilities.max(dim=1).values.cpu().numpy())
+        if progress_every and batch_index % progress_every == 0:
+            print(json.dumps({"phase": "validation-calibration", "batches": batch_index, "queries": count}), flush=True)
     if count == 0: raise ValueError("validation split produced zero calibration examples")
     correct = np.concatenate(correct_rows); ece = []
     for rows in confidence_rows:
@@ -121,11 +127,34 @@ def fit_calibrators(batches, temperatures: list[float], bins: int) -> tuple[dict
     return selected, trace
 
 
-def test_outputs(batches, temperatures: dict[str, float]) -> dict[str, dict[str, np.ndarray]]:
+def _scalar_arrays(scores, labels, temperature, device):
+    torch = _torch(); score_tensor = torch.as_tensor(scores, dtype=torch.float32, device=device)
+    label_tensor = torch.as_tensor(labels, dtype=torch.long, device=device); indices = torch.arange(len(labels), device=device)
+    logp = torch.nn.functional.log_softmax(score_tensor / temperature, dim=1); probabilities = logp.exp()
+    top1 = score_tensor.argmax(dim=1); true_score = score_tensor[indices, label_tensor]
+    candidate_index = torch.arange(score_tensor.shape[1], device=device)[None, :]
+    ranks = 1 + (score_tensor > true_score[:, None]).sum(dim=1) + (
+        (score_tensor == true_score[:, None]) & (candidate_index < label_tensor[:, None])).sum(dim=1)
+    true = probabilities[indices, label_tensor]; confidence = probabilities.max(dim=1).values
+    brier = (probabilities * probabilities).sum(dim=1) - 2 * true + 1
+    to_numpy = lambda value: value.detach().cpu().numpy()
+    return {"labels": labels.astype(np.int64), "top1": to_numpy(top1).astype(np.int64),
+            "ranks": to_numpy(ranks).astype(np.int32), "reciprocal_rank": (1.0 / to_numpy(ranks)).astype(np.float32),
+            "true_probability": to_numpy(true).astype(np.float32), "confidence": to_numpy(confidence).astype(np.float32),
+            "top1_correct": to_numpy(top1 == label_tensor).astype(np.int8), "brier": to_numpy(brier).astype(np.float32)}
+
+
+def test_outputs(batches, temperatures: dict[str, float], device="cpu",
+                 progress_every: int = 50) -> dict[str, dict[str, np.ndarray]]:
+    torch = _torch(); compute_device = torch.device(device)
     rows = {name: [] for name in temperatures}
-    for scores, batch_labels in batches:
+    count = 0
+    for batch_index, (scores, batch_labels) in enumerate(batches, 1):
         for name, temperature in temperatures.items():
-            rows[name].append(arrays_from_probabilities(normalize_log_scores(scores, temperature), batch_labels))
+            rows[name].append(_scalar_arrays(scores, batch_labels, temperature, compute_device))
+        count += len(batch_labels)
+        if progress_every and batch_index % progress_every == 0:
+            print(json.dumps({"phase": "test-calibration", "batches": batch_index, "queries": count}), flush=True)
     if not rows["identity"]: raise ValueError("test split produced zero calibration examples")
     return {name: {key: np.concatenate([row[key] for row in values]) for key in values[0]}
             for name, values in rows.items()}
@@ -151,8 +180,8 @@ def evaluate(args):
                                                args.seed, args.variant, weight, prior, transitions, smoothing)
         protocol_details = {"belief_weight": weight, "belief_weight_source": "RQ7 validation", "belief_statistics_fit": "train"}
     bins = int(config["reliability_bins"])
-    selected, validation_trace = fit_calibrators(factory(validation), temperatures, bins)
-    outputs = test_outputs(factory(test), selected)
+    selected, validation_trace = fit_calibrators(factory(validation), temperatures, bins, device)
+    outputs = test_outputs(factory(test), selected, device)
     output = Path(args.output_dir); output.mkdir(parents=True, exist_ok=True)
     for name, arrays in outputs.items():
         np.savez_compressed(output / f"{name}.predictions.npz", **arrays, query_index=np.arange(len(arrays["labels"])))
