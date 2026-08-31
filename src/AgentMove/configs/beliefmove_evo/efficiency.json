@@ -1,0 +1,12 @@
+{
+  "rq": "RQ12",
+  "warmup_batches": 10,
+  "repeats": 5,
+  "batch_size": 256,
+  "timing_scope": "prepared-input online inference",
+  "exclude": ["checkpoint_loading", "csv_loading", "preprocessing", "warmup"],
+  "neural_protocol": "last-query",
+  "bayesian_protocol": "all-prefix",
+  "routing_source": "RQ8 recorded live cache-generation latency",
+  "routing_result_scope": "Tokyo bounded limit-200"
+}

@@ -477,6 +477,34 @@ Output: `results/beliefmove-evo/aggregated/rq11_summary.json`,
 `results/beliefmove-evo/aggregated/rq11_*_reliability.svg` và
 `ideas/results_rq11.md`.
 
+### RQ12 — Accuracy–Efficiency Trade-off
+
+RQ12 benchmark neural last-query và Bayesian all-prefix riêng biệt trên cùng
+hardware/batch/repeat. Timing loại thời gian load checkpoint, CSV, preprocessing
+và warm-up; CUDA được synchronize. Chi phí LLM lấy từ live cache-generation RQ8
+và luôn gắn nhãn bounded, không giả vờ là cùng timing harness với PyTorch.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 ./scripts/rq12_efficiency.sh audit
+
+# Smoke riêng, không thể lọt vào full aggregate.
+CITY=Tokyo DEVICE=cuda MAX_BATCHES=5 BENCHMARK_REPEATS=2 \
+  ./scripts/rq12_efficiency.sh benchmark-neural
+
+# Full benchmark seed 42–44.
+CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 BENCHMARK_REPEATS=5 \
+  ./scripts/rq12_efficiency.sh run-seeds
+
+CITY=Tokyo ./scripts/rq12_efficiency.sh status
+CITY=Tokyo ./scripts/rq12_efficiency.sh aggregate
+```
+
+Output gồm raw timing/memory theo seed tại `results/beliefmove-evo/artifacts/full/`
+và `results/beliefmove-evo/aggregated/rq12_summary.json`,
+`ideas/results_rq12.md`. Có thể chỉ định RQ8 khác bằng `RQ8_SUMMARY=/path/to/rq8_summary.json`.
+Offline training/cache cost không có timer chuẩn từ đầu được ghi N/A, không nội suy.
+
 ## 11. Baselines
 
 ```bash
