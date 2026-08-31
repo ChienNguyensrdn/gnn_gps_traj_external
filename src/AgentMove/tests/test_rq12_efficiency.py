@@ -9,7 +9,7 @@ import pandas as pd
 
 from hybrid.neural_cgm import ModelConfig, _torch, build_model
 from hybrid.rq12_aggregate import load_routing
-from hybrid.rq12_efficiency import benchmark
+from hybrid.rq12_efficiency import benchmark, deterministic_limit
 
 
 class RQ12EfficiencyTests(unittest.TestCase):
@@ -32,10 +32,18 @@ class RQ12EfficiencyTests(unittest.TestCase):
             result = benchmark(Namespace(checkpoint=str(checkpoint), test_csv=str(test_csv),
                 quality_metrics=str(metrics), quality_variant=None, output=str(output), variant="smoke",
                 protocol="last-query", train_csv=None, rq7_metrics=None, batch_size=2, warmup_batches=1,
-                repeats=2, max_batches=None, device="cpu", seed=42, smoothing=1.0))
-            self.assertTrue(output.is_file()); self.assertEqual(result["timing"]["measured_queries"], 4)
+                repeats=2, max_batches=None, query_limit=1, device="cpu", seed=42, smoothing=1.0))
+            self.assertTrue(output.is_file()); self.assertEqual(result["timing"]["measured_queries"], 2)
             self.assertGreater(result["timing"]["throughput_queries_per_second"], 0)
             self.assertEqual(result["hardware"]["device"], "cpu")
+            self.assertEqual(result["timed_unique_queries"], 1)
+            self.assertEqual(result["available_queries"], 2)
+
+    def test_deterministic_limit_spans_input(self):
+        rows = list(range(10))
+        self.assertEqual(deterministic_limit(rows, 4), [0, 3, 6, 9])
+        self.assertIs(deterministic_limit(rows, None), rows)
+        with self.assertRaises(ValueError): deterministic_limit(rows, 0)
 
     def test_routing_source_must_be_bounded(self):
         with tempfile.TemporaryDirectory() as directory:

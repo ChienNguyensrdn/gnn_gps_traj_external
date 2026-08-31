@@ -2,7 +2,10 @@
   "rq": "RQ12",
   "warmup_batches": 10,
   "repeats": 5,
-  "batch_size": 256,
+  "profiles": {
+    "batch-1": {"batch_size": 1, "query_limit": 2000, "purpose": "single-request latency"},
+    "batch-256": {"batch_size": 256, "query_limit": null, "purpose": "full-test throughput"}
+  },
   "timing_scope": "prepared-input online inference",
   "exclude": ["checkpoint_loading", "csv_loading", "preprocessing", "warmup"],
   "neural_protocol": "last-query",

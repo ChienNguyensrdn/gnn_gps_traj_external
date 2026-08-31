@@ -479,22 +479,24 @@ Output: `results/beliefmove-evo/aggregated/rq11_summary.json`,
 
 ### RQ12 — Accuracy–Efficiency Trade-off
 
-RQ12 benchmark neural last-query và Bayesian all-prefix riêng biệt trên cùng
-hardware/batch/repeat. Timing loại thời gian load checkpoint, CSV, preprocessing
-và warm-up; CUDA được synchronize. Chi phí LLM lấy từ live cache-generation RQ8
-và luôn gắn nhãn bounded, không giả vờ là cùng timing harness với PyTorch.
+RQ12 benchmark neural last-query và Bayesian all-prefix bằng hai profile trên cùng
+hardware/repeat: `batch-1` đo single-request latency trên mẫu xác định 2.000 query;
+`batch-256` đo throughput toàn bộ test. Timing loại thời gian load checkpoint, CSV,
+preprocessing và warm-up; CUDA được synchronize. Aggregate mặc định từ chối run
+có tiến trình GPU ngoại lai. Chi phí LLM lấy từ live cache-generation RQ8 và luôn
+gắn nhãn bounded, không giả vờ là cùng timing harness với PyTorch.
 
 ```bash
 cd src/AgentMove
-CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 ./scripts/rq12_efficiency.sh audit
+CITY=Tokyo DEVICE=cuda PROFILE=batch-1 ./scripts/rq12_efficiency.sh audit
 
 # Smoke riêng, không thể lọt vào full aggregate.
-CITY=Tokyo DEVICE=cuda MAX_BATCHES=5 BENCHMARK_REPEATS=2 \
+CITY=Tokyo DEVICE=cuda PROFILE=batch-1 MAX_BATCHES=5 BENCHMARK_REPEATS=2 \
   ./scripts/rq12_efficiency.sh benchmark-neural
 
-# Full benchmark seed 42–44.
-CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 BENCHMARK_REPEATS=5 \
-  ./scripts/rq12_efficiency.sh run-seeds
+# Chạy đủ batch-1 và batch-256, mỗi profile cho seed 42–44.
+CITY=Tokyo DEVICE=cuda BENCHMARK_REPEATS=5 \
+  ./scripts/rq12_efficiency.sh run-profiles
 
 CITY=Tokyo ./scripts/rq12_efficiency.sh status
 CITY=Tokyo ./scripts/rq12_efficiency.sh aggregate
@@ -503,7 +505,11 @@ CITY=Tokyo ./scripts/rq12_efficiency.sh aggregate
 Output gồm raw timing/memory theo seed tại `results/beliefmove-evo/artifacts/full/`
 và `results/beliefmove-evo/aggregated/rq12_summary.json`,
 `ideas/results_rq12.md`. Có thể chỉ định RQ8 khác bằng `RQ8_SUMMARY=/path/to/rq8_summary.json`.
-Offline training/cache cost không có timer chuẩn từ đầu được ghi N/A, không nội suy.
+Report tách riêng hai profile và ghi timing/memory dưới dạng mean ± std. Trường
+Bayesian `Post-processing/Fusion` bao gồm softmax/CPU transfer và belief fusion.
+Nếu buộc phải dùng GPU đang có tải khác, `ALLOW_GPU_CONTENTION=1` cho phép aggregate
+nhưng gate sẽ ghi rõ contention; không nên dùng kết quả đó để xuất bản. Offline
+training/cache cost không có timer chuẩn từ đầu được ghi N/A, không nội suy.
 
 ## 11. Baselines
 

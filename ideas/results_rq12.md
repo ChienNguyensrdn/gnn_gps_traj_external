@@ -1,5 +1,10 @@
 # RQ12 — Accuracy–Efficiency Trade-off
 
+> **Trạng thái legacy:** các số dưới đây được sinh bởi protocol batch-256 cũ. Sau
+> khi cập nhật RQ12, cần chạy lại `./scripts/rq12_efficiency.sh run-profiles` rồi
+> `aggregate` để thay bằng báo cáo tách `batch-1`/`batch-256`, mean ± std và gate
+> GPU contention. Không dùng bảng legacy này làm kết quả xuất bản cuối cùng.
+
 > Neural/Bayesian latency được benchmark trên cùng hardware với warm-up và CUDA synchronization. LLM latency lấy từ live cache-generation của RQ8 và được ghi nhãn bounded.
 
 ## 1. Câu hỏi nghiên cứu và cách đọc kết quả
