@@ -140,6 +140,24 @@ Nếu một thành phố thiếu, chỉ được báo cáo `partial 11/12`, khô
 
 ## 6. Các báo cáo chi tiết
 
-- RQ1–RQ4: `results_rq1.md`, `results_rq2.md`, `results_rq3.md`, `results_rq4.md`.
-- RQ5–RQ6: `result_rq5.md`, `result_rq5_significance.md`, `result_rq6.md`.
-- RQ7–RQ13: `results_rq7.md` đến `results_rq13.md`.
+Các số dưới đây được trích từ đúng báo cáo nguồn. Chúng thuộc các protocol khác nhau nên chỉ dùng để minh họa kết luận của từng RQ, không ghép thành một bảng xếp hạng chung.
+
+| RQ | Trích dẫn kết quả chính | Báo cáo nguồn |
+|---|---|---|
+| **RQ1** | Tokyo full-test: Transformer teacher đạt R@1 `0,150417`, cao hơn GRU `0,143638` và CE student `0,133789`. Bounded 12-city: AgentMove đạt Acc@1 `0,134024`, Markov đạt `0,112147`. | [Kết quả RQ1](results_rq1.md) |
+| **RQ2** | DBN đạt R@1 `0,104171`, cao hơn BN `0,084041`; paired effect `+0,020130`, Holm p `0,0029997`. Teacher đạt R@1 `0,143638`, tiếp tục vượt DBN có ý nghĩa. | [Kết quả RQ2](results_rq2.md) |
+| **RQ3** | M1/M2/M3/M4 đạt R@1 lần lượt `0,035/0,055/0,115/0,125`. M3 vượt M1 có ý nghĩa, nhưng M2–M1 và M4–M3 không significant sau Holm correction. | [Kết quả RQ3](results_rq3.md) |
+| **RQ4** | E0 CE đạt R@1 `0,134496`; E1 KD `0,145312`; E5 dual `0,147140`. KD tạo gain chính; E5 có mean tốt nhất nhưng incremental gain nhỏ. | [Kết quả RQ4](results_rq4.md) |
+| **RQ5** | Correct/reverse/random đạt R@1 `0,147140/0,139843/0,133337`. Correct vượt cả hai corruption có ý nghĩa trên toàn bộ metrics được kiểm định. | [Kết quả và phân tích RQ5](result_rq5.md), [paired significance](result_rq5_significance.md) |
+| **RQ6** | E5 đạt R@1 `0,147140`, cao nhất theo mean; E6 đạt NLL thấp nhất `7,512255`. Ranking differences giữa các evolution variant chưa significant, nhưng một số NLL effects có ý nghĩa. | [Kết quả RQ6](result_rq6.md) |
+| **RQ7** | B3-DBN tăng R@1 từ `0,141972` lên `0,148607` và R@10 từ `0,383372` lên `0,396834`, nhưng NLL xấu từ `7,130893` thành `7,487551`. | [Kết quả RQ7](results_rq7.md) |
+| **RQ8** | Entropy gọi LLM ở rate `0,145`, giảm khoảng `85,5%` so với Always, nhưng R@1 vẫn `0,125` như Never và kém random ở R@5. Oracle đạt R@1 `0,165` với call rate `0,065`. | [Kết quả RQ8](results_rq8.md) |
+| **RQ9** | Trên 200 query, mọi true-vs-corruption comparison ban đầu đều không significant; jointly-valid analysis vẫn chưa chứng minh predictive utility của memory/context và cho thấy invalid-output confound. | [Kết quả RQ9](results_rq9.md) |
+| **RQ10** | CE student đạt R@1 `0,133789`; GRU-distilled `0,147485`; Transformer-distilled `0,148623`. Cả hai distillation variant vượt CE có ý nghĩa; khác biệt ranking giữa hai teacher chưa significant. | [Kết quả RQ10](results_rq10.md) |
+| **RQ11** | Với B3-DBN, NLL-optimal scaling giảm NLL `7,487550 → 6,430621`; Brier-optimal giảm Brier `0,975386 → 0,942895`; ECE-optimal giảm ECE `0,142256 → 0,019308`. Mỗi objective chọn temperature riêng. | [Kết quả RQ11](results_rq11.md) |
+| **RQ12** | Student-GRU có `8,62M` tham số và batch-256 throughput `150472 ± 2127 query/s`, so với GRU teacher `10,41M` và `135255 ± 14189 query/s`; B3-DBN chỉ `580 ± 4 query/s` do fusion overhead. | [Kết quả RQ12](results_rq12.md) |
+| **RQ13** | Clean R@1 `0,147140`; GPS-drop-50 `0,141189`; position-noise-500m `0,092769`; wrong-user `0,051697`. Position remapping và user corruption là hai failure mode mạnh nhất. | [Kết quả RQ13](results_rq13.md) |
+
+### Trích dẫn kết luận tổng hợp
+
+Từ RQ1–RQ13, kết luận được hỗ trợ mạnh nhất là: quantitative knowledge distillation cải thiện student; mô hình sử dụng đúng temporal order; transition-aware DBN cải thiện ranking; và các gain này đi kèm trade-off calibration/efficiency. Ngược lại, structured LLM evidence và uncertainty routing hiện mới cho tín hiệu mô tả hoặc negative result trên bounded Tokyo, chưa đủ bằng chứng để claim cải thiện tổng quát.
