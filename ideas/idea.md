@@ -255,8 +255,8 @@ $$
 
 trong đó:
 
-- $$t$$: mobility time step;
-- $$\ell$$: network layer.
+- $t$: mobility time step;
+- $\ell$: network layer.
 
 Ta có hai hướng tiến hóa.
 

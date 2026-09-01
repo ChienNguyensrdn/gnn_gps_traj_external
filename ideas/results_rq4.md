@@ -12,7 +12,7 @@ RQ4 kiểm tra đóng góp của từng thành phần trong **distillation tiế
 - validation để chọn checkpoint;
 - test chỉ để báo cáo kết quả cuối cùng.
 
-Có **47 raw runs hợp lệ**: 36 runs thuộc RQ4 và 11 runs validation thuộc RQ5. Cả sáu cấu hình RQ4 trên test split đều vượt publication gate tối thiểu ba seed.
+Có 6 cấu hình × 3 seed × 2 split được tổng hợp, tương ứng **36 raw runs**. Cả sáu cấu hình trên test split đều vượt publication gate tối thiểu ba seed.
 
 ## 2. E0–E5 là gì?
 
@@ -118,52 +118,12 @@ So với E1-kd, E5 chỉ cải thiện nhỏ: +0.001828 Recall@1, +0.000380 Reca
 - Cần paired test trên cùng query hoặc thêm seed để kiểm chứng phần cải thiện nhỏ của E5.
 - Validation và test có generalization gap, nhưng thứ hạng tổng quát E0 < E1/E2/E3/E4 < E5 vẫn được duy trì trên test.
 
-## 7. RQ5 — Order-corruption ablation
-
-RQ5 kiểm tra mô hình có thực sự sử dụng thứ tự thời gian của trajectory hay chỉ dựa vào tập hợp POI. Ba chế độ được định nghĩa như sau:
-
-- **correct:** giữ nguyên thứ tự thời gian, là đối chứng;
-- **reverse:** đảo ngược toàn bộ thứ tự input nhưng giữ nguyên label, split và candidate vocabulary;
-- **random:** hoán vị input theo seed, đồng thời giữ nguyên label, split và candidate vocabulary.
-
-### 7.1. Kết quả validation hiện có
-
-| Experiment | Seeds | Recall@1 | Recall@5 | Recall@10 | Gate |
-|---|---|---:|---:|---:|---|
-| E5-dual-correct | 42, 43, 44 | 0.159366 ± 0.002308 | 0.333297 ± 0.001550 | 0.401482 ± 0.002574 | not ready |
-| E5-dual-random | 42–51 | 0.139805 ± 0.001420 | 0.317981 ± 0.001973 | 0.387714 ± 0.002037 | not ready |
-| E5-dual-reverse | 42 | 0.151883 | 0.325120 | 0.394109 | not ready |
-
-Khoảng tin cậy bootstrap 95% của random corruption:
-
-- Recall@1: `0.138929–0.140604`;
-- Recall@5: `0.316820–0.319098`;
-- Recall@10: `0.386498–0.388907`.
-
-Reverse hiện chỉ có seed 42 nên không báo standard deviation hoặc confidence interval.
-
-### 7.2. Diễn giải sơ bộ
-
-So với mean của correct order, random permutation làm giảm tuyệt đối:
-
-- Recall@1: `−0.019561`, tương đối khoảng **−12.27%**;
-- Recall@5: `−0.015316`, tương đối khoảng **−4.60%**;
-- Recall@10: `−0.013768`, tương đối khoảng **−3.43%**.
-
-Kết quả này cho thấy E5-dual có khai thác thông tin thứ tự, đặc biệt rõ ở dự đoán top-1. Reverse cũng thấp hơn correct ở cả ba Recall, nhưng mới có một seed nên chỉ được xem là bằng chứng sơ bộ.
-
-Không nên coi các chênh lệch trên là paired effect chính thức vì correct và random hiện không dùng cùng số lượng seed. Để hoàn thành RQ5 cần bổ sung reverse seed 43–44, đánh giá test cho các chế độ đã đóng băng, và thực hiện paired comparison trên cùng query/seed.
-
-## 8. Kết luận có thể dùng trong bài báo
+## 7. Kết luận có thể dùng trong bài báo
 
 > Trên TIST2015-Tokyo, response knowledge distillation là thành phần tạo ra mức cải thiện lớn nhất so với mô hình chỉ dùng cross-entropy. Các loss trajectory và velocity khi sử dụng riêng lẻ chưa vượt baseline KD. Mô hình đầy đủ E5-dual đạt mean tốt nhất trên toàn bộ ranking và calibration metrics, cho thấy tiềm năng của việc kết hợp tiến hóa biểu diễn theo chiều layer và thời gian. Tuy nhiên, do thí nghiệm hiện có ba seed và chỉ trên Tokyo, lợi ích nhỏ của E5 so với E1 cần được xác nhận bằng paired significance test và đánh giá đa thành phố trước khi đưa ra kết luận tổng quát.
-
-> Trong order-corruption ablation, random permutation làm giảm Recall@1 validation khoảng 12.27% so với correct order, cho thấy mô hình sử dụng thông tin thứ tự thời gian thay vì chỉ ghi nhớ tập hợp POI. Đây mới là kết quả sơ bộ vì reverse chưa đủ seed và RQ5 chưa được đánh giá trên test split.
 
 ## Publication gate
 
 - `ready`: test split và đủ ít nhất ba seed.
 - `not ready`: validation split hoặc thiếu số seed tối thiểu.
-- Trạng thái RQ4: **Tokyo test đã đủ gate cho cả E0–E5**.
-- Trạng thái RQ5: **chưa đủ gate** vì mới có validation; reverse chỉ có một seed và chưa có test evaluation hợp lệ.
-- Đánh giá 12 thành phố: **chưa hoàn thành**.
+- Trạng thái hiện tại: **RQ4 Tokyo test đã đủ gate cho cả E0–E5; đánh giá 12 thành phố chưa hoàn thành**.
