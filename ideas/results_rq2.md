@@ -22,36 +22,42 @@ RQ2 kiểm tra mức chất lượng có thể đạt được khi suy luận v�
 | dbn-data-only | 0.104171 | 0.245498 | 0.316860 | 0.171933 | 9.507008 | 0.999571 | 0.103411 |
 | quantitative-teacher | 0.143638 ± 0.001971 | 0.290502 ± 0.002346 | 0.344891 ± 0.003259 | 0.213183 ± 0.001935 | 8.799284 ± 0.278926 | 0.948259 ± 0.002997 | 0.035296 ± 0.013116 |
 
-## 3. Paired teacher comparisons
+## 3. Paired comparisons
 
-Positive effect nghĩa là quantitative teacher tốt hơn baseline đứng sau. Với NLL và Brier, dấu đã được quy đổi để giá trị dương luôn mang nghĩa teacher tốt hơn. Holm correction được áp dụng cho toàn bộ phép kiểm định.
+Positive effect nghĩa là variant đứng trước tốt hơn. Với NLL và Brier, dấu đã được quy đổi để giá trị dương luôn mang nghĩa variant đứng trước tốt hơn. Holm correction được áp dụng chung cho toàn bộ 30 phép kiểm định.
 
-| Comparison | Metric | Effect favoring teacher | 95% CI | Holm p | Significant |
+| Comparison | Metric | Effect favoring first | 95% CI | Holm p | Significant |
 |---|---|---:|---:|---:|---|
-| quantitative-teacher-vs-unigram | recall@1 | 0.119316 | 0.116384–0.122283 | 0.00239976 | yes |
-| quantitative-teacher-vs-unigram | recall@5 | 0.197406 | 0.193611–0.201183 | 0.00239976 | yes |
-| quantitative-teacher-vs-unigram | recall@10 | 0.223487 | 0.219468–0.227472 | 0.00239976 | yes |
-| quantitative-teacher-vs-unigram | mrr | 0.155709 | 0.152913–0.158490 | 0.00239976 | yes |
+| quantitative-teacher-vs-unigram | recall@1 | 0.119316 | 0.116384–0.122283 | 0.0029997 | yes |
+| quantitative-teacher-vs-unigram | recall@5 | 0.197406 | 0.193611–0.201183 | 0.0029997 | yes |
+| quantitative-teacher-vs-unigram | recall@10 | 0.223487 | 0.219468–0.227472 | 0.0029997 | yes |
+| quantitative-teacher-vs-unigram | mrr | 0.155709 | 0.152913–0.158490 | 0.0029997 | yes |
 | quantitative-teacher-vs-unigram | nll | -0.046144 | -0.097842–0.005326 | 0.0791921 | no |
-| quantitative-teacher-vs-unigram | brier | 0.049408 | 0.047472–0.051355 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | recall@1 | 0.048058 | 0.045160–0.050956 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | recall@5 | 0.075950 | 0.072380–0.079418 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | recall@10 | 0.080246 | 0.076606–0.083954 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | mrr | 0.061232 | 0.058630–0.063765 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | nll | 1.058558 | 1.003188–1.114897 | 0.00239976 | yes |
-| quantitative-teacher-vs-markov-bigram | brier | 0.051067 | 0.049145–0.053005 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | recall@1 | 0.059598 | 0.056630–0.062530 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | recall@5 | 0.076313 | 0.072966–0.079694 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | recall@10 | 0.056493 | 0.053233–0.059822 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | mrr | 0.065439 | 0.062959–0.067885 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | nll | 0.549096 | 0.495466–0.604454 | 0.00239976 | yes |
-| quantitative-teacher-vs-bn-data-only | brier | 0.051223 | 0.049271–0.053183 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | recall@1 | 0.039467 | 0.036656–0.042348 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | recall@5 | 0.045004 | 0.041848–0.048196 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | recall@10 | 0.028031 | 0.024874–0.031239 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | mrr | 0.041249 | 0.038962–0.043566 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | nll | 0.707723 | 0.652178–0.761981 | 0.00239976 | yes |
-| quantitative-teacher-vs-dbn-data-only | brier | 0.051312 | 0.049358–0.053252 | 0.00239976 | yes |
+| quantitative-teacher-vs-unigram | brier | 0.049408 | 0.047472–0.051355 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | recall@1 | 0.048058 | 0.045160–0.050956 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | recall@5 | 0.075950 | 0.072380–0.079418 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | recall@10 | 0.080246 | 0.076606–0.083954 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | mrr | 0.061232 | 0.058630–0.063765 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | nll | 1.058558 | 1.003188–1.114897 | 0.0029997 | yes |
+| quantitative-teacher-vs-markov-bigram | brier | 0.051067 | 0.049145–0.053005 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | recall@1 | 0.059598 | 0.056630–0.062530 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | recall@5 | 0.076313 | 0.072966–0.079694 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | recall@10 | 0.056493 | 0.053233–0.059822 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | mrr | 0.065439 | 0.062959–0.067885 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | nll | 0.549096 | 0.495466–0.604454 | 0.0029997 | yes |
+| quantitative-teacher-vs-bn-data-only | brier | 0.051223 | 0.049271–0.053183 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | recall@1 | 0.039467 | 0.036656–0.042348 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | recall@5 | 0.045004 | 0.041848–0.048196 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | recall@10 | 0.028031 | 0.024874–0.031239 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | mrr | 0.041249 | 0.038962–0.043566 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | nll | 0.707723 | 0.652178–0.761981 | 0.0029997 | yes |
+| quantitative-teacher-vs-dbn-data-only | brier | 0.051312 | 0.049358–0.053252 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | recall@1 | 0.020130 | 0.017181–0.023184 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | recall@5 | 0.031308 | 0.027945–0.034672 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | recall@10 | 0.028462 | 0.024995–0.031929 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | mrr | 0.024189 | 0.022092–0.026357 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | nll | -0.158627 | -0.164966–-0.152302 | 0.0029997 | yes |
+| dbn-data-only-vs-bn-data-only | brier | -0.000089 | -0.000098–-0.000080 | 0.0029997 | yes |
 
 ## 4. Phân tích kết quả
 
@@ -59,7 +65,9 @@ Positive effect nghĩa là quantitative teacher tốt hơn baseline đứng sau.
 
 `dbn-data-only` đạt R@1 = 0,104171, R@5 = 0,245498, R@10 = 0,316860 và MRR = 0,171933, cao nhất trong bốn baseline chỉ dùng dữ liệu. So với `bn-data-only`, DBN tăng mô tả 0,020130 R@1, 0,031308 R@5, 0,028462 R@10 và 0,024189 MRR. Điều này cho thấy transition từ POI gần nhất bổ sung tín hiệu hữu ích ngoài user/time priors.
 
-Aggregator đã được bổ sung paired test trực tiếp `dbn-data-only-vs-bn-data-only`. Bảng hiện tại vẫn chưa ghi kết quả kiểm định này vì cần chạy lại `aggregate` trên server chứa per-query predictions; cho tới lúc đó, mức tăng DBN–BN vẫn chỉ là chênh lệch mô tả.
+Paired test trực tiếp xác nhận toàn bộ mức tăng ranking đều có ý nghĩa sau Holm correction: R@1 tăng 0,020130, R@5 tăng 0,031308, R@10 tăng 0,028462 và MRR tăng 0,024189; mọi bootstrap 95% CI đều nằm hoàn toàn trên 0 và Holm p = 0,0029997. Vì vậy có thể khóa kết luận first-order transition cải thiện ranking so với BN user/time trong protocol Tokyo này.
+
+Đổi lại, DBN làm NLL xấu hơn 0,158627 và Brier xấu hơn 0,000089; cả hai trade-off cũng có ý nghĩa thống kê. DBN vì thế không trội BN trên mọi phương diện: nó cải thiện thứ hạng nhưng làm xác suất kém hơn.
 
 ### 4.2. Teacher vẫn vượt toàn bộ baseline data-only
 
@@ -84,7 +92,7 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 ## 5. Kết luận RQ2
 
 - DBN là baseline data-only mạnh nhất về Recall@K và MRR trong bốn cấu hình đã chạy.
-- First-order transition mang lại giá trị bổ sung so với user/time BN, nhưng chênh lệch DBN–BN hiện mới là mô tả vì chưa có paired test trực tiếp.
+- First-order transition cải thiện BN có ý nghĩa trên toàn bộ Recall@K/MRR, nhưng đồng thời làm NLL và Brier xấu hơn có ý nghĩa.
 - Quantitative teacher vượt tất cả baseline data-only về mọi metric ranking với ý nghĩa thống kê sau Holm correction.
 - Data-only Bayesian inference chưa thay thế được learned teacher, đặc biệt ở R@1 và MRR.
 - ECE thấp đơn lẻ không đồng nghĩa với dự đoán tốt; unigram là ví dụ rõ nhất.
@@ -94,7 +102,7 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 - Gate: **ready-tokyo-matched-last-query**.
 - Train chỉ được dùng để fit empirical prior/transition; test không dùng để tuning.
 - Teacher dùng seed 42–44; baseline deterministic chỉ tính một run.
-- Paired tests dùng cùng test query; Holm correction áp dụng cho toàn bộ teacher comparisons.
+- Paired tests dùng cùng test query; Holm correction áp dụng chung cho toàn bộ 30 phép kiểm định.
 - Đây là categorical POI data-only experiment, không dùng LLM hoặc OSM.
 - Kết luận hiện chỉ áp dụng cho TIST2015–Tokyo; chưa phải kết quả 12-city.
-- Paired significance `dbn-data-only-vs-bn-data-only` đã có trong aggregator; cần chạy lại `aggregate` và cập nhật hàng kết quả trước khi khóa claim “DBN tốt hơn BN”.
+- DBN-vs-BN dùng một deterministic paired run; không pseudo-replicate theo ba teacher seed.
