@@ -584,6 +584,27 @@ standard deviation giả từ các bản sao seed. Aggregation gồm paired
 teacher-vs-baseline và paired trực tiếp `dbn-data-only-vs-bn-data-only`; Holm
 correction áp dụng chung cho tất cả phép kiểm định RQ2.
 
+### RQ3 — LLM knowledge distillation
+
+RQ3 dùng bounded matched Tokyo last-query và replay structured LLM evidence từ
+cache đã đóng băng. M1 là BN data-only; M2 thêm LLM belief; M3 thêm quantitative
+teacher; M4 dùng cả hai teacher. Prior chỉ fit train, fusion weight chỉ chọn bằng
+validation và paired significance chỉ tính trên test. Đây là frozen belief-fusion
+ablation của structured teacher signals, không huấn luyện lại neural student.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo RQ3_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq3_llm_distillation.sh audit
+CITY=Tokyo RQ3_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq3_llm_distillation.sh evaluate
+CITY=Tokyo RQ3_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/rq3_llm_distillation.sh status
+CITY=Tokyo RQ3_LIMIT=200 OLLAMA_MODEL=qwen2:7b SIGNIFICANCE_ITERATIONS=10000 \
+  ./scripts/rq3_llm_distillation.sh aggregate
+```
+
+Output: `results/beliefmove-evo/aggregated/rq3_summary.json` và
+`ideas/results_rq3.md`. RQ3 limit hữu hạn không được gọi là full-query hoặc
+12-city result.
+
 ## 11. Baselines
 
 ```bash
