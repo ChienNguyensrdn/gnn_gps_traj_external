@@ -138,6 +138,21 @@ Chỉ gắn nhãn `ready-12city` khi:
 
 Nếu một thành phố thiếu, chỉ được báo cáo `partial 11/12`, không được tính và gọi là “12-city average”.
 
+### 5.7. Script thực thi
+
+```bash
+cd src/AgentMove
+./scripts/run_all_cities_rqs.sh audit
+DEVICE=cuda BATCH_SIZE=128 ./scripts/run_all_cities_rqs.sh neural
+DEVICE=cuda BATCH_SIZE=128 ./scripts/run_all_cities_rqs.sh bayesian
+DEVICE=cuda ./scripts/run_all_cities_rqs.sh efficiency
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/run_all_cities_rqs.sh llm-bounded
+./scripts/run_all_cities_rqs.sh status
+./scripts/run_all_cities_rqs.sh aggregate
+```
+
+Mọi action có thể chạy lại để resume. `status` cho phép incomplete và ghi danh sách artifact thiếu; `aggregate` trả exit code 2 nếu chưa đủ publication gate 12-city.
+
 ## 6. Các báo cáo chi tiết
 
 Các số dưới đây được trích từ đúng báo cáo nguồn. Chúng thuộc các protocol khác nhau nên chỉ dùng để minh họa kết luận của từng RQ, không ghép thành một bảng xếp hạng chung.

@@ -605,6 +605,27 @@ Output: `results/beliefmove-evo/aggregated/rq3_summary.json` và
 `ideas/results_rq3.md`. RQ3 limit hữu hạn không được gọi là full-query hoặc
 12-city result.
 
+### Chạy toàn bộ RQ trên 12 thành phố
+
+Orchestrator chạy đúng 12 thành phố, tuần tự và có resume theo artifact:
+
+```bash
+cd src/AgentMove
+./scripts/run_all_cities_rqs.sh audit
+DEVICE=cuda BATCH_SIZE=128 ./scripts/run_all_cities_rqs.sh neural
+DEVICE=cuda BATCH_SIZE=128 ./scripts/run_all_cities_rqs.sh bayesian
+DEVICE=cuda ./scripts/run_all_cities_rqs.sh efficiency
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/run_all_cities_rqs.sh llm-bounded
+./scripts/run_all_cities_rqs.sh status
+./scripts/run_all_cities_rqs.sh aggregate
+```
+
+Có thể giới hạn tạm thời bằng `CITIES="Tokyo Nairobi"`, nhưng `aggregate` sẽ từ
+chối gắn nhãn 12-city. Dùng `AGGREGATE_SCOPE=neural|bayesian|efficiency|llm` để
+kiểm tra từng tầng. RQ12 phải chạy khi GPU không có foreign process.
+Summary ghi rõ LLM scope là `no-OSM`; không được dùng để điền hàng mô hình full
+world knowledge.
+
 ## 11. Baselines
 
 ```bash
