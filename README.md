@@ -564,6 +564,24 @@ Output: `results/beliefmove-evo/aggregated/rq1_summary.json` và
 `ideas/results_rq1.md`. Missing/incompatible bounded baseline tạo gate partial,
 không được lấp bằng số liệu từ protocol khác.
 
+### RQ2 — Bayesian student data-only
+
+RQ2 dùng matched Tokyo last-query. Unigram, Markov/Bi-gram, BN và DBN chỉ fit
+train; quantitative GRU teacher dùng checkpoint chọn bằng validation. BN geometric-
+fuse user/time empirical priors; DBN bổ sung transition prior. Không dùng LLM/OSM.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo SEED=42 ./scripts/rq2_data_only.sh audit
+CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 ./scripts/rq2_data_only.sh run-seeds
+CITY=Tokyo ./scripts/rq2_data_only.sh status
+CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 ./scripts/rq2_data_only.sh aggregate
+```
+
+Output: `results/beliefmove-evo/aggregated/rq2_summary.json` và
+`ideas/results_rq2.md`. Baseline deterministic được báo cáo một run, không tạo
+standard deviation giả từ các bản sao seed.
+
 ## 11. Baselines
 
 ```bash
