@@ -59,7 +59,7 @@ Positive effect nghĩa là quantitative teacher tốt hơn baseline đứng sau.
 
 `dbn-data-only` đạt R@1 = 0,104171, R@5 = 0,245498, R@10 = 0,316860 và MRR = 0,171933, cao nhất trong bốn baseline chỉ dùng dữ liệu. So với `bn-data-only`, DBN tăng mô tả 0,020130 R@1, 0,031308 R@5, 0,028462 R@10 và 0,024189 MRR. Điều này cho thấy transition từ POI gần nhất bổ sung tín hiệu hữu ích ngoài user/time priors.
 
-Tuy nhiên, báo cáo hiện chưa có paired test trực tiếp `dbn-data-only-vs-bn-data-only`. Vì vậy mức tăng này chỉ là chênh lệch mô tả, chưa nên gọi là cải thiện có ý nghĩa thống kê.
+Aggregator đã được bổ sung paired test trực tiếp `dbn-data-only-vs-bn-data-only`. Bảng hiện tại vẫn chưa ghi kết quả kiểm định này vì cần chạy lại `aggregate` trên server chứa per-query predictions; cho tới lúc đó, mức tăng DBN–BN vẫn chỉ là chênh lệch mô tả.
 
 ### 4.2. Teacher vẫn vượt toàn bộ baseline data-only
 
@@ -97,4 +97,4 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 - Paired tests dùng cùng test query; Holm correction áp dụng cho toàn bộ teacher comparisons.
 - Đây là categorical POI data-only experiment, không dùng LLM hoặc OSM.
 - Kết luận hiện chỉ áp dụng cho TIST2015–Tokyo; chưa phải kết quả 12-city.
-- Để khóa claim “DBN tốt hơn BN”, cần bổ sung paired significance `dbn-data-only-vs-bn-data-only` trong aggregator.
+- Paired significance `dbn-data-only-vs-bn-data-only` đã có trong aggregator; cần chạy lại `aggregate` và cập nhật hàng kết quả trước khi khóa claim “DBN tốt hơn BN”.

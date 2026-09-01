@@ -580,7 +580,9 @@ CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 ./scripts/rq2_data_only.sh aggregate
 
 Output: `results/beliefmove-evo/aggregated/rq2_summary.json` và
 `ideas/results_rq2.md`. Baseline deterministic được báo cáo một run, không tạo
-standard deviation giả từ các bản sao seed.
+standard deviation giả từ các bản sao seed. Aggregation gồm paired
+teacher-vs-baseline và paired trực tiếp `dbn-data-only-vs-bn-data-only`; Holm
+correction áp dụng chung cho tất cả phép kiểm định RQ2.
 
 ## 11. Baselines
 
