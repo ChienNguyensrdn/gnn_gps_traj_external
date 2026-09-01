@@ -1,0 +1,8 @@
+{
+  "rq": "RQ1",
+  "quantitative_protocol": "Tokyo matched full-test, seeds 42-44",
+  "quantitative_baselines": ["teacher-gru", "teacher-transformer", "student-ce"],
+  "bounded_protocol": "TIST2015 12-city, limit-200, reported separately",
+  "bounded_baselines": ["markov-bigram", "agentmove-original"],
+  "cross_protocol_paired_comparison": false
+}

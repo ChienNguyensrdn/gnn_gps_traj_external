@@ -543,6 +543,27 @@ Output: `results/beliefmove-evo/aggregated/rq13_summary.json` và
 của categorical POI pipeline, không được diễn giải như raw-coordinate encoder.
 Report ghi mean ± std qua seed 42–44 và paired significance đã hiệu chỉnh Holm.
 
+### RQ1 — Baseline reproducibility (hệ BeliefMove-Evo)
+
+RQ1 được kiểm tra hồi cứu và tách hai protocol: quantitative baselines trên Tokyo
+full-test với seed 42–44; Markov/AgentMove trên TIST2015 bounded 12-city. Không tính
+paired delta giữa hai protocol khác query/scope.
+
+```bash
+cd src/AgentMove
+CITY=Tokyo ./scripts/rq1_reproducibility.sh audit
+
+# Chỉ chạy nếu audit báo thiếu bounded baseline; AgentMove dùng Ollama và resume cache.
+CITY=Tokyo RQ1_LIMIT=200 OLLAMA_MODEL=qwen2:7b \
+  ./scripts/rq1_reproducibility.sh run-bounded
+
+CITY=Tokyo ./scripts/rq1_reproducibility.sh aggregate
+```
+
+Output: `results/beliefmove-evo/aggregated/rq1_summary.json` và
+`ideas/results_rq1.md`. Missing/incompatible bounded baseline tạo gate partial,
+không được lấp bằng số liệu từ protocol khác.
+
 ## 11. Baselines
 
 ```bash
