@@ -5,7 +5,9 @@
   "seeds": [42, 43, 44],
   "variants": [
     "clean", "gps-drop-25", "gps-drop-50", "time-noise-30m", "time-noise-60m",
-    "position-noise-200m", "position-noise-500m", "context-missing", "context-wrong"
+    "position-noise-200m", "position-noise-500m",
+    "context-missing-user", "context-missing-time", "context-wrong-user", "context-wrong-time",
+    "context-missing", "context-wrong"
   ],
   "significance": "query-paired seed-macro bootstrap/sign-flip; Holm correction"
 }

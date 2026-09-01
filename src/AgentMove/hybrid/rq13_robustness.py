@@ -13,7 +13,9 @@ from .neural_cgm import _batches, _torch, build_examples
 from .evaluate_student import prediction_arrays, summarize_logits
 
 VARIANTS = ("clean", "gps-drop-25", "gps-drop-50", "time-noise-30m", "time-noise-60m",
-            "position-noise-200m", "position-noise-500m", "context-missing", "context-wrong")
+            "position-noise-200m", "position-noise-500m",
+            "context-missing-user", "context-missing-time", "context-wrong-user", "context-wrong-time",
+            "context-missing", "context-wrong")
 
 
 def position_mapping(frame: pd.DataFrame, sigma_m: float, seed: int) -> dict[int, int]:
@@ -51,6 +53,14 @@ def perturb_examples(examples, variant: str, seed: int, num_users: int, poi_mapp
         elif variant.startswith("position-noise-"):
             if poi_mapping is None: raise ValueError("position-noise requires a POI mapping")
             pois = [poi_mapping.get(value, value) for value in pois]
+        elif variant == "context-missing-user":
+            user = num_users
+        elif variant == "context-missing-time":
+            target_slot = 0
+        elif variant == "context-wrong-user":
+            user = (user + 1) % max(num_users, 1)
+        elif variant == "context-wrong-time":
+            target_slot = (target_slot + 24) % 48
         elif variant == "context-missing":
             user = num_users; target_slot = 0
         elif variant == "context-wrong":

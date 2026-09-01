@@ -515,8 +515,10 @@ training/cache cost không có timer chuẩn từ đầu được ghi N/A, khôn
 
 RQ13 giữ nguyên checkpoint E5-dual và test target, chỉ perturb phần context đã
 quan sát. Protocol gồm GPS point dropout 25%/50%, timestamp noise 30/60 phút,
-position noise 200/500 m, missing context và wrong context. Mỗi perturbation sinh
-per-query prediction để kiểm định paired với clean, dùng Holm correction.
+position noise 200/500 m, missing/wrong user context và missing/wrong temporal
+context. Hai variant context tổng hợp vẫn được giữ để đo failure mode kết hợp.
+Mỗi perturbation sinh per-query prediction để kiểm định paired với clean; ba cặp
+mức nhiễu nhẹ/nặng còn được kiểm định dose-response trực tiếp, dùng Holm correction.
 
 ```bash
 cd src/AgentMove
@@ -527,6 +529,7 @@ CITY=Tokyo SEED=42 DEVICE=cuda BATCH_SIZE=256 \
   ./scripts/rq13_robustness.sh evaluate-seed
 
 # Full seed 42–44.
+# Artifact cũ được giữ; sau cập nhật này chỉ bốn context one-axis mới phải chạy.
 CITY=Tokyo DEVICE=cuda BATCH_SIZE=256 \
   ./scripts/rq13_robustness.sh run-seeds
 
@@ -538,6 +541,7 @@ CITY=Tokyo SIGNIFICANCE_ITERATIONS=10000 \
 Output: `results/beliefmove-evo/aggregated/rq13_summary.json` và
 `ideas/results_rq13.md`. Position noise được ánh xạ về POI gần nhất nên đo độ bền
 của categorical POI pipeline, không được diễn giải như raw-coordinate encoder.
+Report ghi mean ± std qua seed 42–44 và paired significance đã hiệu chỉnh Holm.
 
 ## 11. Baselines
 

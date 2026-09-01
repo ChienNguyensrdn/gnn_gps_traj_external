@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 ACTION="${1:-audit}"; PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"; CITY="${CITY:-Tokyo}"; SEED="${SEED:-42}"
 BASE="data/hybrid/TIST2015/$CITY"; ROOT="results/beliefmove-evo/artifacts/full/$CITY/rq13"
 CHECKPOINT_ROOT="results/beliefmove-evo/artifacts/full/$CITY/E5-dual/correct"
-VARIANTS=(clean gps-drop-25 gps-drop-50 time-noise-30m time-noise-60m position-noise-200m position-noise-500m context-missing context-wrong)
+VARIANTS=(clean gps-drop-25 gps-drop-50 time-noise-30m time-noise-60m position-noise-200m position-noise-500m context-missing-user context-missing-time context-wrong-user context-wrong-time context-missing context-wrong)
 
 require_file() { [[ -f "$1" ]] || { echo "Missing required file: $1" >&2; exit 2; }; }
 audit() {

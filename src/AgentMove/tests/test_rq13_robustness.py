@@ -24,6 +24,14 @@ class RQ13RobustnessTests(unittest.TestCase):
         self.assertTrue(all(row[2] == 2 and row[3] == 0 for row in missing))
         self.assertEqual([row[2] for row in wrong], [1, 0])
 
+    def test_context_one_axis_changes_only_requested_axis(self):
+        missing_user, _ = perturb_examples(self.examples, "context-missing-user", 42, 2)
+        wrong_time, _ = perturb_examples(self.examples, "context-wrong-time", 42, 2)
+        self.assertTrue(all(row[2] == 2 for row in missing_user))
+        self.assertEqual([row[3] for row in missing_user], [5, 6])
+        self.assertEqual([row[2] for row in wrong_time], [0, 1])
+        self.assertEqual([row[3] for row in wrong_time], [29, 30])
+
     def test_position_mapping_returns_candidate_ids(self):
         frame = pd.DataFrame({"POI_id": [0, 1, 2], "latitude": [0.0, 0.001, 0.002],
                               "longitude": [0.0, 0.0, 0.0]})
