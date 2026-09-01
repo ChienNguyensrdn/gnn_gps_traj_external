@@ -72,11 +72,12 @@ def mean_std(item, scale=1.0, digits=4):
 
 def render_profile(lines, profile, data):
     title = "Batch-1 — single-request latency" if profile == "batch-1" else "Batch-256 — throughput"
-    sample = next(iter(data["neural"].values()))
-    sampled = (f"mẫu timing xác định {sample['timed_unique_queries']}/{sample['available_queries']} query"
-               if sample["query_limit"] else f"toàn bộ {sample['available_queries']} query")
-    lines += [f"## {title}", "", f"> {sampled}; chất lượng lấy từ full frozen test metrics. Timing/memory là mean ± std qua seed.", "",
-              "### Neural — last-query", "",
+    neural_sample = next(iter(data["neural"].values()))
+    bayesian_sample = next(iter(data["bayesian"].values()))
+    sample_text = lambda row: (f"mẫu timing xác định {row['timed_unique_queries']}/{row['available_queries']} query"
+                               if row["query_limit"] else f"toàn bộ {row['available_queries']} query")
+    lines += [f"## {title}", "", "### Neural — last-query", "",
+              f"> {sample_text(neural_sample)}; chất lượng lấy từ full frozen test metrics. Timing/memory là mean ± std qua seed.", "",
               "| Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P50 ms/q | P95 ms/q | Query/s | GPU peak MB | RSS peak MB | Params |",
               "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for variant, row in data["neural"].items():
@@ -84,6 +85,7 @@ def render_profile(lines, profile, data):
                      f"{mean_std(row['timing']['latency_mean_seconds'],1000)} | {mean_std(row['timing']['latency_p50_seconds'],1000)} | {mean_std(row['timing']['latency_p95_seconds'],1000)} | "
                      f"{mean_std(row['timing']['throughput_queries_per_second'],1,2)} | {mean_std(row['gpu_peak_allocated_mb'],1,1)} | {mean_std(row['rss_peak_mb'],1,1)} | {row['parameters']['mean']:.0f} |")
     lines += ["", "### Bayesian — all-prefix", "",
+              f"> {sample_text(bayesian_sample)} all-prefix; chất lượng lấy từ full frozen test metrics. Không so trực tiếp với Neural last-query.", "",
               "| Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P95 ms/q | Query/s | Model s | Post-processing/Fusion s | GPU peak MB |",
               "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for variant, row in data["bayesian"].items():

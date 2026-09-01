@@ -1,71 +1,56 @@
-# RQ12 — Accuracy–Efficiency Trade-off
+# RQ12 — Đánh đổi giữa độ chính xác và hiệu quả
 
-> **Trạng thái legacy:** các số dưới đây được sinh bởi protocol batch-256 cũ. Sau
-> khi cập nhật RQ12, cần chạy lại `./scripts/rq12_efficiency.sh run-profiles` rồi
-> `aggregate` để thay bằng báo cáo tách `batch-1`/`batch-256`, mean ± std và gate
-> GPU contention. Không dùng bảng legacy này làm kết quả xuất bản cuối cùng.
+> Batch-1 và batch-256 được báo cáo riêng. Neural/Bayesian dùng warm-up và CUDA synchronization; LLM latency lấy từ live cache-generation của RQ8 và được ghi nhãn bounded.
 
-> Neural/Bayesian latency được benchmark trên cùng hardware với warm-up và CUDA synchronization. LLM latency lấy từ live cache-generation của RQ8 và được ghi nhãn bounded.
+## 1. Batch-1 — độ trễ single-request
 
-## 1. Câu hỏi nghiên cứu và cách đọc kết quả
+### Neural — last-query
 
-RQ12 kiểm tra trade-off giữa chất lượng dự đoán, latency, throughput, bộ nhớ, số tham số và chi phí gọi LLM.
-
-- Neural dùng last-query protocol và batch size cố định của benchmark.
-- Bayesian dùng all-prefix protocol; không so trực tiếp trị tuyệt đối với neural.
-- `Mean/P50/P95 ms/q` của PyTorch là **amortized batch time trên mỗi query**, tức thời gian batch chia cho số query trong batch. Đây không phải single-request latency ở batch size 1.
-- `Model s` và `Fusion s` là tổng thời gian qua toàn bộ repeat. Với B0, `Fusion s` bao gồm CPU transfer, softmax và post-processing dù không có Bayesian fusion thực sự.
-- LLM latency là latency đã ghi khi tạo live Ollama cache trong RQ8 bounded limit 200, không phải cùng timing harness với PyTorch.
-
-## 2. Neural — last-query
+> Timing dùng mẫu xác định 2.000/19.324 query; chất lượng lấy từ full frozen test. Timing, quality và memory là mean ± std qua ba seed 42–44.
 
 | Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P50 ms/q | P95 ms/q | Query/s | GPU peak MB | RSS peak MB | Params |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| teacher-gru | 0.143638 | 0.290502 | 0.344891 | 0.213183 | 0.0074 | 0.0072 | 0.0087 | 136780.21 | 159.9 | 770.4 | 10409646 |
-| teacher-transformer | 0.150417 | 0.302077 | 0.362089 | 0.222782 | 0.0100 | 0.0094 | 0.0143 | 99609.52 | 173.8 | 852.7 | 10736174 |
-| student-none | 0.133789 | 0.272528 | 0.325467 | 0.199728 | 0.0069 | 0.0068 | 0.0084 | 144052.32 | 151.4 | 769.0 | 8619774 |
-| student-gru | 0.147485 | 0.306734 | 0.370851 | 0.223206 | 0.0068 | 0.0066 | 0.0081 | 148013.12 | 151.4 | 766.2 | 8619774 |
-| student-transformer | 0.148623 | 0.308804 | 0.373680 | 0.224638 | 0.0069 | 0.0068 | 0.0081 | 144600.88 | 151.4 | 766.2 | 8619774 |
+| teacher-gru | 0.143638 ± 0.001971 | 0.290502 ± 0.002346 | 0.344891 ± 0.003259 | 0.213183 ± 0.001935 | 1.0049 ± 0.0606 | 0.9794 ± 0.0556 | 1.1537 ± 0.0790 | 997.50 ± 58.20 | 56.9 ± 0.0 | 755.2 ± 4.5 | 10409646 |
+| teacher-transformer | 0.150417 ± 0.001609 | 0.302077 ± 0.001061 | 0.362089 ± 0.000987 | 0.222782 ± 0.000968 | 1.8412 ± 0.0294 | 1.7862 ± 0.0277 | 2.0951 ± 0.0491 | 543.21 ± 8.62 | 50.9 ± 0.0 | 877.4 ± 0.2 | 10736174 |
+| student-none | 0.133789 ± 0.000470 | 0.272528 ± 0.003174 | 0.325467 ± 0.000617 | 0.199728 ± 0.001192 | 1.0227 ± 0.0065 | 0.9961 ± 0.0066 | 1.2025 ± 0.0594 | 977.86 ± 6.18 | 50.0 ± 0.0 | 743.2 ± 0.0 | 8619774 |
+| student-gru | 0.147485 ± 0.002119 | 0.306734 ± 0.000957 | 0.370851 ± 0.002514 | 0.223206 ± 0.001778 | 1.0711 ± 0.1395 | 1.0478 ± 0.1316 | 1.2122 ± 0.1760 | 943.56 ± 114.38 | 50.0 ± 0.0 | 744.0 ± 0.4 | 8619774 |
+| student-transformer | 0.148623 ± 0.002627 | 0.308804 ± 0.002957 | 0.373680 ± 0.003187 | 0.224638 ± 0.000803 | 1.0219 ± 0.0307 | 0.9985 ± 0.0309 | 1.1537 ± 0.0421 | 979.18 ± 28.96 | 50.0 ± 0.0 | 746.6 ± 4.3 | 8619774 |
 
-### Phân tích
+### Bayesian — all-prefix
 
-Hai student distillation có cùng kiến trúc và số tham số 8,619,774 nên chi phí inference gần như giống nhau; teacher backbone chỉ ảnh hưởng quá trình huấn luyện. `student-gru` đạt throughput cao nhất 148,013 query/s, trong khi `student-transformer` đạt chất lượng ranking cao nhất trong ba student.
-
-So với teacher GRU, student GRU:
-
-- giảm khoảng 17.19% số tham số;
-- giảm mean latency từ 0.0074 xuống 0.0068 ms/query;
-- tăng R@1 từ 0.143638 lên 0.147485;
-- tăng R@10 từ 0.344891 lên 0.370851;
-- tăng MRR từ 0.213183 lên 0.223206.
-
-So với teacher Transformer, student Transformer giảm khoảng 19.71% số tham số và khoảng 31% amortized mean latency. Student có R@5, R@10 và MRR cao hơn teacher, nhưng R@1 thấp hơn nhẹ: 0.148623 so với 0.150417.
-
-Teacher Transformer có ranking tốt hơn teacher GRU nhưng mean latency cao hơn khoảng 35% và throughput thấp hơn khoảng 27%. Điều này củng cố lợi ích của distillation: student giữ hoặc cải thiện phần lớn chất lượng với kiến trúc inference nhỏ và nhanh hơn.
-
-## 3. Bayesian — all-prefix
+> Timing dùng mẫu xác định 2.000/94.587 query all-prefix; chất lượng lấy từ full frozen test. Không so trực tiếp trị tuyệt đối với Neural last-query.
 
 | Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P95 ms/q | Query/s | Model s | Post-processing/Fusion s | GPU peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| B0-static | 0.141972 | 0.313228 | 0.383372 | 0.223297 | 0.3898 | 0.4238 | 2565.70 | 3.425 | 180.428 | 153.0 |
-| B3-dbn | 0.148607 | 0.325217 | 0.396834 | 0.232260 | 1.7482 | 1.8957 | 572.16 | 3.620 | 822.642 | 153.0 |
+| B0-static | 0.141972 ± 0.000794 | 0.313228 ± 0.000897 | 0.383372 ± 0.000863 | 0.223297 ± 0.000273 | 1.3272 ± 0.0214 | 1.5088 ± 0.0284 | 753.62 ± 12.18 | 8.958 ± 0.211 | 2.907 ± 0.026 | 50.0 ± 0.0 |
+| B3-dbn | 0.148607 ± 0.000749 | 0.325217 ± 0.000270 | 0.396834 ± 0.000560 | 0.232260 ± 0.000460 | 2.7517 ± 0.1870 | 3.2672 ± 0.2152 | 364.50 ± 24.00 | 9.372 ± 1.276 | 16.632 ± 0.438 | 50.0 ± 0.0 |
 
-### Phân tích
+## 2. Batch-256 — throughput
 
-B3 cải thiện so với B0:
+### Neural — last-query
 
-- R@1 tăng 0.006635, khoảng 4.67%;
-- R@5 tăng 0.011989, khoảng 3.83%;
-- R@10 tăng 0.013462, khoảng 3.51%;
-- MRR tăng 0.008963, khoảng 4.01%.
+> Timing chạy toàn bộ 19.324 query; chất lượng lấy từ full frozen test.
 
-Đổi lại, mean latency tăng từ 0.3898 lên 1.7482 ms/query, tương đương khoảng 4.49 lần, và throughput giảm từ 2,565.70 xuống 572.16 query/s. GPU peak không đổi vì chi phí tăng chủ yếu đến từ CPU post-processing và transition-prior fusion, không phải backbone GPU.
+| Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P50 ms/q | P95 ms/q | Query/s | GPU peak MB | RSS peak MB | Params |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| teacher-gru | 0.143638 ± 0.001971 | 0.290502 ± 0.002346 | 0.344891 ± 0.003259 | 0.213183 ± 0.001935 | 0.0075 ± 0.0008 | 0.0073 ± 0.0008 | 0.0088 ± 0.0010 | 135255.31 ± 14188.73 | 159.9 ± 0.0 | 775.7 ± 0.4 | 10409646 |
+| teacher-transformer | 0.150417 ± 0.001609 | 0.302077 ± 0.001061 | 0.362089 ± 0.000987 | 0.222782 ± 0.000968 | 0.0100 ± 0.0001 | 0.0095 ± 0.0001 | 0.0143 ± 0.0001 | 99635.11 ± 776.08 | 173.8 ± 0.0 | 853.2 ± 0.4 | 10736174 |
+| student-none | 0.133789 ± 0.000470 | 0.272528 ± 0.003174 | 0.325467 ± 0.000617 | 0.199728 ± 0.001192 | 0.0069 ± 0.0003 | 0.0068 ± 0.0003 | 0.0082 ± 0.0003 | 144102.37 ± 5365.19 | 151.4 ± 0.0 | 761.5 ± 0.4 | 8619774 |
+| student-gru | 0.147485 ± 0.002119 | 0.306734 ± 0.000957 | 0.370851 ± 0.002514 | 0.223206 ± 0.001778 | 0.0066 ± 0.0001 | 0.0065 ± 0.0001 | 0.0079 ± 0.0002 | 150472.14 ± 2126.66 | 151.4 ± 0.0 | 760.8 ± 0.4 | 8619774 |
+| student-transformer | 0.148623 ± 0.002627 | 0.308804 ± 0.002957 | 0.373680 ± 0.003187 | 0.224638 ± 0.000803 | 0.0067 ± 0.0003 | 0.0066 ± 0.0003 | 0.0081 ± 0.0005 | 148488.21 ± 6031.71 | 151.4 ± 0.0 | 761.5 ± 0.3 | 8619774 |
 
-Phần model forward chỉ chiếm khoảng 3.4–3.6 giây tổng cộng, trong khi post-processing/fusion chiếm 180.4 giây cho B0 và 822.6 giây cho B3. Vì vậy, điểm nghẽn của Bayesian hiện nằm ở NumPy/CPU candidate-distribution processing. B3 vẫn đạt latency dưới 2 ms/query theo batch-amortized benchmark, nhưng cần vector hóa hoặc chuyển fusion sang tensor nếu triển khai throughput cao.
+### Bayesian — all-prefix
 
-## 4. LLM routing — bounded Tokyo limit 200
+> Timing chạy toàn bộ 94.587 query all-prefix; không so trực tiếp trị tuyệt đối với Neural last-query.
 
-> Latency source: recorded live Ollama cache-generation latency. Không so trực tiếp với neural/Bayesian như cùng timing harness.
+| Variant | R@1 | R@5 | R@10 | MRR | Mean ms/q | P95 ms/q | Query/s | Model s | Post-processing/Fusion s | GPU peak MB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| B0-static | 0.141972 ± 0.000794 | 0.313228 ± 0.000897 | 0.383372 ± 0.000863 | 0.223297 ± 0.000273 | 0.3925 ± 0.0022 | 0.4282 ± 0.0020 | 2547.82 ± 14.61 | 3.655 ± 0.343 | 181.453 ± 0.902 | 153.0 ± 0.0 |
+| B3-dbn | 0.148607 ± 0.000749 | 0.325217 ± 0.000270 | 0.396834 ± 0.000560 | 0.232260 ± 0.000460 | 1.7248 ± 0.0121 | 1.8722 ± 0.0122 | 579.79 ± 4.08 | 3.548 ± 0.197 | 811.680 ± 5.537 | 153.0 ± 0.0 |
+
+## 3. LLM routing — bounded Tokyo limit=200
+
+> Latency lấy từ live Ollama cache-generation, không cùng timing harness với PyTorch.
 
 | Policy | R@1 | R@5 | R@10 | MRR | Call rate | Mean latency s/q | P95 latency s/q | Tokens/query |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -74,33 +59,37 @@ Phần model forward chỉ chiếm khoảng 3.4–3.6 giây tổng cộng, trong
 | always | 0.120000 | 0.280000 | 0.305000 | 0.193732 | 1.000000 | 2.822543 | 3.637879 | 955.88 |
 | random-budget-matched | 0.124200 | 0.253500 | 0.305000 | 0.187044 | 0.145000 | 0.395059 | 2.614543 | 137.60 |
 
-### Phân tích
+## 4. Phân tích kết quả
 
-Entropy routing giảm call rate từ 100% xuống 14.5%, mean latency từ 2.822543 xuống 0.390842 giây/query, tương đương giảm khoảng 86.15%, và tokens/query giảm khoảng 85.21%. Tuy nhiên, nó không cải thiện chất lượng rõ ràng so với Never hoặc Random-budget-matched trong RQ8. Vì vậy, router thể hiện lợi ích chi phí so với Always-LLM nhưng chưa chứng minh được lựa chọn query tốt hơn random ở cùng budget.
+### Hiệu quả của distillation
 
-Always-LLM đạt MRR cao nhất trong nhóm routing nhưng có R@1 thấp hơn Never. Với experiment bounded 200 query, không nên diễn giải các khác biệt nhỏ thành kết luận tổng quát.
+Hai student distillation có 8.619.774 tham số, ít hơn teacher GRU khoảng 17,2% và teacher Transformer khoảng 19,7%. `student-transformer` đạt chất lượng tốt nhất trong nhóm student với R@10 = 0,373680 và MRR = 0,224638. `student-gru` đạt throughput batch-256 cao nhất, khoảng 150.472 query/s. Điều này cho thấy distillation cải thiện chất lượng so với `student-none` mà không tăng kích thước hoặc chi phí inference của student.
+
+Ở single-request, các student nằm quanh 1 ms/query. Teacher Transformer chậm nhất, 1,8412 ms/query, trong khi teacher GRU và các student gần nhau hơn. Vì `student-gru` và `student-transformer` có cùng kiến trúc inference, khác biệt latency nhỏ giữa chúng chủ yếu phản ánh nhiễu hệ thống thay vì khác biệt mô hình.
+
+### Chi phí của Bayesian belief
+
+So với B0-static, B3-dbn tăng R@1 từ 0,141972 lên 0,148607, R@10 từ 0,383372 lên 0,396834 và MRR từ 0,223297 lên 0,232260. Đổi lại, single-request latency tăng từ 1,3272 lên 2,7517 ms/query, còn throughput batch-256 giảm từ khoảng 2.548 xuống 580 query/s.
+
+Nút thắt chính không nằm ở neural forward mà ở `Post-processing/Fusion`: với batch-256, B3-dbn dùng khoảng 811,680 giây qua năm repeat, so với 181,453 giây của B0-static. Vì vậy, nếu triển khai production, tối ưu vector hóa hoặc chuyển Bayesian fusion khỏi vòng lặp Python là ưu tiên quan trọng.
+
+### Chi phí của LLM
+
+LLM routing chậm hơn neural/Bayesian nhiều bậc độ lớn. Policy `entropy` giảm call rate xuống 14,5% và còn khoảng 141 token/query, nhưng không cải thiện R@1/R@5 so với `never` trong bounded experiment này. `always` tăng MRR và R@5 nhưng tốn khoảng 2,82 giây/query. Do RQ8 chỉ có 200 query, các con số này chỉ minh họa trade-off chi phí và chưa đủ để kết luận tổng quát.
 
 ## 5. Kết luận RQ12
 
-Trong neural last-query, student distillation nằm trên vùng Pareto tốt: chi phí inference thấp hơn teacher trong khi chất lượng ranking tương đương hoặc tốt hơn ở phần lớn metric. `student-transformer` phù hợp khi ưu tiên chất lượng tổng thể; `student-gru` có throughput cao nhất và chênh lệch chất lượng rất nhỏ.
+- Distillation tạo điểm vận hành tốt nhất: student nhỏ hơn teacher, inference nhanh và chất lượng cao hơn student chỉ học cross-entropy.
+- `student-gru` phù hợp khi ưu tiên throughput; `student-transformer` phù hợp khi ưu tiên chất lượng ranking, dù chênh lệch giữa hai student nhỏ.
+- B3-dbn cải thiện chất lượng nhưng có overhead CPU/fusion đáng kể; cần tối ưu implementation trước khi triển khai quy mô lớn.
+- LLM chỉ nên được gọi có chọn lọc, nhưng entropy router hiện chưa chứng minh được lợi ích chất lượng trên bounded RQ8.
 
-Trong Bayesian all-prefix, B3 đổi khoảng 4.49 lần latency để đạt mức tăng 3.5–4.7% tương đối trên các metric ranking. Đây là trade-off có thật, và bottleneck chủ yếu ở CPU fusion.
+## 6. Protocol gate và giới hạn
 
-Trong LLM routing bounded, Entropy giảm mạnh token và latency so với Always-LLM, nhưng chưa chứng minh được lợi thế chất lượng so với random-budget-matched. Do timing source và query protocol khác nhau, không được dùng tỷ lệ neural–LLM latency như một speedup publication chính thức.
-
-Kết luận được phép sử dụng là: **distilled students cải thiện accuracy–efficiency trade-off so với heavy teachers trên matched last-query benchmark; B3 cải thiện quality với chi phí CPU fusion đáng kể; selective routing giảm mạnh chi phí so với Always-LLM trong bounded experiment.**
-
-## 6. Protocol và giới hạn
-
-- Neural last-query và Bayesian all-prefix được báo cáo riêng; không so trực tiếp latency/quality tuyệt đối giữa hai query protocol.
-- Timing loại checkpoint loading, CSV loading, preprocessing và warm-up; có tính CPU→device transfer và online forward/fusion.
-- Neural latency là amortized batch latency. Cần benchmark bổ sung batch size 1 nếu muốn claim latency phục vụ từng request.
-- Bảng hiện chỉ trình bày mean; raw JSON có repeat/seed timing nhưng báo cáo publication nên bổ sung độ lệch chuẩn hoặc CI.
-- Kết quả chỉ đáng tin như benchmark hardware-isolated nếu không có tiến trình khác dùng chung GPU/CPU. Cần ghi nhận trạng thái contention khi chạy.
-- Offline teacher training và LLM cache construction chưa có timer chuẩn từ đầu nên ghi N/A, không suy diễn số liệu.
-- RQ8 là bounded limit hữu hạn; latency của nó là recorded live Ollama latency, không phải cùng harness với PyTorch.
-- Kết quả hiện chỉ áp dụng cho Tokyo và hardware ghi trong JSON, chưa phải 12-city hoặc cross-hardware.
-
-## 7. Publication gate
-
-RQ12 đạt gate nội bộ cho matched batch-throughput benchmark Tokyo nếu tất cả run dùng cùng hardware, batch size, warm-up và repeat như JSON xác nhận. Gate publication cho online latency vẫn cần batch-size-1 benchmark và xác nhận hardware không bị contention. Gate full-query LLM và đa thành phố chưa hoàn thành.
+- Batch-1 đo single-request latency trên mẫu query xác định; batch-256 đo throughput trên toàn bộ test query.
+- Neural last-query và Bayesian all-prefix được báo cáo riêng, không so trực tiếp chất lượng/latency tuyệt đối giữa hai protocol.
+- Timing loại checkpoint loading, CSV loading, preprocessing và warm-up; có tính CPU→device transfer và online forward/post-processing/fusion.
+- Aggregate mặc định từ chối run có GPU process ngoại lai. Nếu summary có `gpu_contention_allowed=true`, kết quả chỉ là provisional và không dùng làm số publication cuối cùng.
+- Offline teacher training và LLM cache construction ghi N/A vì chưa có timer chuẩn từ đầu.
+- RQ8 là bounded limit hữu hạn và không cùng timing harness với PyTorch.
+- Kết quả hiện chỉ áp dụng cho Tokyo, ba seed 42–44 và hardware đã ghi trong JSON; chưa phải kết quả 12-city hoặc cross-hardware.
