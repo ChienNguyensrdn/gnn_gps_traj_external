@@ -620,6 +620,46 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/run_all_cities_rqs.sh llm-bounded
 ./scripts/run_all_cities_rqs.sh aggregate
 ```
 
+### Kiểm chứng cross-dataset trên WWW2019 (Shanghai-ISP)
+
+WWW2019 được chạy như một miền kiểm chứng độc lập, không được gộp với macro 12-city
+TIST2015. Pipeline giữ temporal split, candidate vocabulary chỉ fit từ train và lưu
+artifact riêng trong `results/beliefmove-evo-www2019/`.
+
+```bash
+cd src/AgentMove
+
+# Kiểm tra Python, raw data, dữ liệu đã prepare và checkpoint
+./scripts/www2019_pipeline.sh audit
+
+# Chỉ chạy khi raw WWW2019 chưa có; không tự động download trong action khác
+./scripts/www2019_pipeline.sh download
+
+# Chuẩn hóa Shanghai-ISP và tạo train/validation/test
+./scripts/www2019_pipeline.sh prepare
+
+# Teacher + smoke test trước khi chạy đầy đủ
+DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh train-teacher
+DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh smoke
+
+# Cross-dataset core: E0/E1/E5, order corruption, seed 42--44
+DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh neural
+
+# B0-static và B3-DBN trên all-prefix
+DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh bayesian
+
+# Hybrid LLM bounded; có cache và chạy lại để resume
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/www2019_pipeline.sh llm-bounded
+
+# Kiểm tra thiếu artifact; aggregate chỉ thành công khi publication gate đầy đủ
+./scripts/www2019_pipeline.sh status
+./scripts/www2019_pipeline.sh aggregate
+```
+
+`smoke` ghi vào scope `smoke`, không được đưa vào báo cáo chính. Báo cáo cuối nằm ở
+`ideas/results_www2019.md`; JSON máy đọc nằm ở
+`src/AgentMove/results/beliefmove-evo-www2019/aggregated/www2019_summary.json`.
+
 Có thể giới hạn tạm thời bằng `CITIES="Tokyo Nairobi"`, nhưng `aggregate` sẽ từ
 chối gắn nhãn 12-city. Dùng `AGGREGATE_SCOPE=neural|bayesian|efficiency|llm` để
 kiểm tra từng tầng. RQ12 phải chạy khi GPU không có foreign process.

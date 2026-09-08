@@ -22,6 +22,10 @@ collect() {
   export OLLAMA_BASE_URL="http://127.0.0.1:11434/v1" OLLAMA_API_KEY="${OLLAMA_API_KEY:-ollama}"
   local variant
   for variant in "${VARIANTS[@]}"; do
+    if [[ -f "$ROOT/$variant/metrics.json" && -f "$ROOT/$variant/predictions.jsonl" && "${FORCE:-0}" != 1 ]]; then
+      echo "skip existing $ROOT/$variant"
+      continue
+    fi
     "$PYTHON_BIN" -m hybrid.rq9_semantic_rerank --test "$BASE/test.jsonl" \
       --calibration "$HYBRID_RUN_DIR/calibration.json" --output-dir "$ROOT/$variant" \
       --variant "$variant" --model-name "$MODEL" --limit "$LIMIT" --seed "$SEED" \
