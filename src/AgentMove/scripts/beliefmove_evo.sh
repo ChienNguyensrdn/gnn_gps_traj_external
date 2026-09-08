@@ -6,8 +6,9 @@ ACTION="${1:-audit}"
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 CITY="${CITY:-Tokyo}"
 SEED="${SEED:-42}"
-BASE="data/hybrid/TIST2015/$CITY"
-OUT="results/beliefmove-evo"
+BASE="${DATA_BASE:-data/hybrid/TIST2015/$CITY}"
+OUT="${BELIEFMOVE_OUT:-results/beliefmove-evo}"
+DATASET_LABEL="${DATASET_LABEL:-TIST2015-$CITY}"
 
 require_python() {
   [[ -x "$PYTHON_BIN" ]] || { echo "Missing $PYTHON_BIN; run ./scripts/setup_ubuntu.sh" >&2; exit 2; }
@@ -71,7 +72,7 @@ train_student() {
     *) echo "TRAIN_RQ must be RQ4, RQ5 or RQ6" >&2; exit 2 ;; esac
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "${target%.pt}.metrics.json" \
     --output "$OUT/raw/$rq_dir/$CITY/$variant-$order-seed-$SEED.json" \
-    --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
+    --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "$DATASET_LABEL" \
     --config configs/beliefmove_evo/evolution_ablation.json --repository ../.. \
     --dataset-files "$BASE/getnext/train.csv" "$BASE/getnext/val.csv" "$BASE/getnext/test.csv"
   echo "student=$target"
@@ -108,7 +109,7 @@ evaluate_student() {
     --order-mode "$order" --predictions-output "$predictions"
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "$metrics" \
     --output "$OUT/raw/$rq_dir/$CITY/$variant-$order-seed-$SEED.json" \
-    --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "TIST2015-$CITY" \
+    --rq "$rq" --experiment "$variant-$order" --seed "$SEED" --dataset "$DATASET_LABEL" \
     --config configs/beliefmove_evo/evolution_ablation.json --repository ../.. --evaluation-split test \
     --dataset-files "$BASE/getnext/train.csv" "$BASE/getnext/val.csv" "$BASE/getnext/test.csv"
   echo "evaluation=$rq order=$order metrics=$metrics"
@@ -141,7 +142,7 @@ evaluate_rq6() {
     --batch-size "${BATCH_SIZE:-256}" --device "${DEVICE:-auto}" --seed "$SEED"
   "$PYTHON_BIN" -m hybrid.record_beliefmove_result --metrics "$metrics" \
     --output "$OUT/raw/rq6-test/$CITY/$variant-correct-seed-$SEED.json" \
-    --rq RQ6 --experiment "$variant-correct" --seed "$SEED" --dataset "TIST2015-$CITY" \
+    --rq RQ6 --experiment "$variant-correct" --seed "$SEED" --dataset "$DATASET_LABEL" \
     --config configs/beliefmove_evo/evolution_ablation.json --repository ../.. --evaluation-split test \
     --dataset-files "$BASE/getnext/train.csv" "$BASE/getnext/val.csv" "$BASE/getnext/test.csv"
   echo "evaluation=RQ6 variant=$variant metrics=$metrics"
