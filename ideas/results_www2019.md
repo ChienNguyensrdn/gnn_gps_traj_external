@@ -29,15 +29,16 @@ và NLL thấp nhất. Tuy nhiên, lợi ích E5 so với E1 không đồng đ�
 
 ### Paired significance được hỗ trợ
 
-Holm correction được áp dụng chung cho 24 phép kiểm định.
+Holm correction được áp dụng chung cho 36 phép kiểm định, bao gồm cả frozen
+checkpoint control.
 
 | Comparison | Metric | Effect favoring first | 95% CI | Holm p | Kết luận |
 |---|---|---:|---:|---:|---|
-| E1-kd vs E0-ce | R@1 | 0,009660 | 0,003816–0,015504 | 0,022798 | Có ý nghĩa |
-| E1-kd vs E0-ce | NLL | 1,567166 | 1,504273–1,628866 | 0,002400 | Có ý nghĩa |
-| E1-kd vs E0-ce | Brier | 0,060563 | 0,055705–0,065402 | 0,002400 | Có ý nghĩa |
-| E5-dual vs E1-kd | R@5 | 0,009899 | 0,004890–0,014908 | 0,005999 | Có ý nghĩa |
-| E5-dual vs E1-kd | NLL | 0,108322 | 0,088082–0,128384 | 0,002400 | Có ý nghĩa |
+| E1-kd vs E0-ce | R@1 | 0,009660 | 0,003816–0,015504 | 0,027597 | Có ý nghĩa |
+| E1-kd vs E0-ce | NLL | 1,567166 | 1,504273–1,628866 | 0,003600 | Có ý nghĩa |
+| E1-kd vs E0-ce | Brier | 0,060563 | 0,055705–0,065402 | 0,003600 | Có ý nghĩa |
+| E5-dual vs E1-kd | R@5 | 0,009899 | 0,004890–0,014908 | 0,007499 | Có ý nghĩa |
+| E5-dual vs E1-kd | NLL | 0,108322 | 0,088082–0,128384 | 0,003600 | Có ý nghĩa |
 
 Các khác biệt E1–E0 về R@5, R@10 và MRR; E5–E1 về R@1, R@10, MRR và Brier
 không còn ý nghĩa sau Holm correction. Vì vậy, kết luận được phép dùng là
@@ -81,9 +82,9 @@ Trong paired test của protocol hiện tại:
 
 - `correct-vs-reverse`: không metric ranking nào có ý nghĩa sau Holm.
 - `correct-vs-random`: không metric ranking nào có ý nghĩa sau Holm.
-- R@1 correct–random có effect `0,004413`, nhưng Holm p `0,798320`.
+- R@1 correct–random có effect `0,004413`, nhưng Holm p `0,848215`.
 - NLL correct–random có effect `-0,082767`, CI
-  `-0,099651–-0,065630`, Holm p `0,002400`: random tốt hơn correct về NLL.
+  `-0,099651–-0,065630`, Holm p `0,003600`: random tốt hơn correct về NLL.
 
 Dấu âm của NLL không phải lỗi tính toán. Quy ước paired effect đã đảo dấu cho
 NLL/Brier để giá trị dương luôn có nghĩa variant đứng trước tốt hơn.
@@ -118,7 +119,7 @@ Vì vậy chưa được kết luận “temporal order không quan trọng trê
 luận chính xác là: **lợi ích của correct order chưa được xác nhận dưới protocol
 retraining-under-corruption**.
 
-### 5.4. Control cần bổ sung
+### 5.4. Frozen-checkpoint control
 
 Giữ nguyên checkpoint `E5-dual/correct` của từng seed và chỉ thay đổi test input:
 
@@ -126,12 +127,29 @@ Giữ nguyên checkpoint `E5-dual/correct` của từng seed và chỉ thay đ�
 2. cùng checkpoint + reverse test;
 3. cùng checkpoint + random test.
 
-Control này không cần huấn luyện lại. Nếu quality giảm có ý nghĩa, mô hình có sử
-dụng chronology nhưng có khả năng thích nghi khi retrain trên corrupted order.
-Nếu vẫn không giảm, giả thuyết temporal-order không được hỗ trợ trên Shanghai.
+Kết quả khi giữ nguyên E5-correct checkpoint:
 
-Script đã được chuẩn bị qua action `www2019_pipeline.sh frozen-order`; các con số
-vẫn để trống cho tới khi ba seed được đánh giá và aggregate lại.
+| Comparison | Metric | Effect favoring correct | 95% CI | Holm p | Kết luận |
+|---|---|---:|---:|---:|---|
+| frozen correct vs reverse | R@1 | 0,011807 | 0,007036–0,016696 | 0,003600 | Có ý nghĩa |
+| frozen correct vs reverse | R@5 | 0,012999 | 0,007990–0,018008 | 0,003600 | Có ý nghĩa |
+| frozen correct vs reverse | R@10 | 0,008110 | 0,003220–0,012999 | 0,043996 | Có ý nghĩa |
+| frozen correct vs reverse | MRR | 0,011429 | 0,007942–0,014991 | 0,003600 | Có ý nghĩa |
+| frozen correct vs reverse | NLL | 0,065487 | 0,045094–0,085264 | 0,003600 | Có ý nghĩa |
+| frozen correct vs reverse | Brier | 0,005009 | 0,003287–0,006737 | 0,003600 | Có ý nghĩa |
+| frozen correct vs random | R@1 | 0,006917 | 0,002982–0,010853 | 0,007499 | Có ý nghĩa |
+| frozen correct vs random | R@5 | 0,005367 | 0,001431–0,009422 | 0,161984 | Không |
+| frozen correct vs random | R@10 | 0,002624 | -0,001193–0,006559 | 1,000000 | Không |
+| frozen correct vs random | MRR | 0,005400 | 0,002714–0,008109 | 0,005199 | Có ý nghĩa |
+| frozen correct vs random | NLL | -0,018009 | -0,032677–-0,003010 | 0,287971 | Không |
+| frozen correct vs random | Brier | 0,002587 | 0,001282–0,003873 | 0,003600 | Có ý nghĩa |
+
+Reverse làm suy giảm có ý nghĩa toàn bộ sáu metric. Random làm suy giảm có ý
+nghĩa R@1, MRR và Brier; R@5 dù CI bootstrap dương nhưng không qua Holm, còn
+R@10 và NLL không có ý nghĩa sau correction. Kết quả xác nhận checkpoint học
+chronology đúng thực sự sử dụng thứ tự tại inference. Việc các mô hình retrain
+trên reverse/random không kém rõ cho thấy chúng có thể thích nghi một phần với
+corruption, không phải temporal order không quan trọng.
 
 ## 6. Kết luận cross-dataset
 
@@ -142,16 +160,17 @@ vẫn để trống cho tới khi ba seed được đánh giá và aggregate l�
 - DBN tăng ranking mạnh nhưng gây suy giảm calibration rõ rệt.
 - LLM bounded có ranking tốt nhưng chi phí cao và xác suất calibration kém;
   chưa phải bằng chứng full-query.
-- Temporal-order chưa được xác nhận bằng protocol retraining hiện tại; cần frozen
-  checkpoint inference corruption trước khi đưa ra kết luận cơ chế.
+- Temporal mechanism được xác nhận bởi frozen-checkpoint control, mạnh nhất với
+  reverse và được hỗ trợ một phần với random. Retraining giúp mô hình thích nghi
+  với corrupted order và che khuất tác động này trong protocol ban đầu.
 
 ## 7. Publication gate
 
 - Neural E0/E1/E5, seed 42–44: **ready**.
 - Bayesian B0/B3, seed 42–44: **ready**, nhưng protocol all-prefix báo cáo riêng.
-- Paired tests và Holm correction: **ready**.
+- Paired tests và Holm correction cho đủ 36 phép kiểm định: **ready**.
 - LLM Qwen2:7b, 200 query, no-OSM: **ready-bounded**.
 - Temporal-order retraining-under-corruption: **ready**, không hỗ trợ giả thuyết.
-- Temporal-order frozen-checkpoint control: **script-ready, result-missing**.
+- Temporal-order frozen-checkpoint control: **ready**, hỗ trợ giả thuyết.
 - Gate kỹ thuật toàn pipeline: **ready-www2019**.
-- Gate cho tuyên bố đầy đủ về temporal mechanism: **chưa hoàn thành**.
+- Gate cho tuyên bố đầy đủ về temporal mechanism: **ready**.
