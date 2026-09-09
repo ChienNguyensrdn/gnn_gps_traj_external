@@ -82,7 +82,8 @@ def main() -> None:
             if not path.is_file() or not prediction.is_file():
                 missing.extend(str(p) for p in (path, prediction) if not p.is_file())
                 continue
-            runs.append(read(path))
+            payload = read(path)
+            runs.append(payload.get("metrics", payload))
         if runs:
             rows[variant] = {
                 metric: {"mean": float(np.mean([r[metric] for r in runs])),

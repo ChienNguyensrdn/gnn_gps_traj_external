@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from hybrid.www2019_summary import PAIRED_COMPARISONS, paired_summary
+from hybrid.www2019_summary import PAIRED_COMPARISONS, paired_summary, read
 
 
 def _write_prediction(path: Path, ranks: list[int]) -> None:
@@ -50,3 +50,14 @@ def test_paired_summary_covers_locked_www2019_comparisons(tmp_path: Path) -> Non
     assert recall["correct-vs-reverse"] > 0
     assert recall["correct-vs-random"] > 0
     assert all(0.0 <= row["holm_adjusted_p"] <= 1.0 for row in rows)
+
+
+def test_student_metric_schema_is_nested(tmp_path: Path) -> None:
+    path = tmp_path / "test.metrics.json"
+    path.write_text('{"metrics": {"recall@1": 0.25, "mrr": 0.5}}')
+
+    payload = read(path)
+    metrics = payload.get("metrics", payload)
+
+    assert metrics["recall@1"] == 0.25
+    assert metrics["mrr"] == 0.5
