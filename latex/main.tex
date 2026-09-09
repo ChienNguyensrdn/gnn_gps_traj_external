@@ -1,0 +1,465 @@
+\documentclass[runningheads]{llncs}
+
+\usepackage{fontspec}
+\setmainfont{texgyretermes-regular.otf}[
+  BoldFont=texgyretermes-bold.otf,
+  ItalicFont=texgyretermes-italic.otf,
+  BoldItalicFont=texgyretermes-bolditalic.otf]
+\setsansfont{texgyreheros-regular.otf}[
+  BoldFont=texgyreheros-bold.otf,
+  ItalicFont=texgyreheros-italic.otf,
+  BoldItalicFont=texgyreheros-bolditalic.otf]
+\setmonofont{lmmono10-regular.otf}[ItalicFont=lmmono10-italic.otf]
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,multirow}
+\usepackage{adjustbox}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\setlength{\paperwidth}{210mm}
+\setlength{\paperheight}{297mm}
+\special{papersize=210mm,297mm}
+
+\newcommand{\Rone}{\mathrm{R@1}}
+\newcommand{\Rfive}{\mathrm{R@5}}
+\newcommand{\Rten}{\mathrm{R@10}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\method}{BeliefMove-Evo}
+\newcommand{\good}{\textcolor{black}{Có}}
+\newcommand{\partialok}{\textcolor{black}{Một phần}}
+\renewcommand{\abstractname}{Tóm tắt}
+\renewcommand{\keywordname}{Từ khóa:}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\refname}{Tài liệu tham khảo}
+
+\begin{document}
+
+\title{BeliefMove-Evo: Chắt lọc tri thức và suy luận belief tuần tự cho dự đoán địa điểm kế tiếp}
+\titlerunning{BeliefMove-Evo cho dự đoán địa điểm kế tiếp}
+
+\author{Tác giả ẩn danh}
+\authorrunning{Tác giả ẩn danh}
+\institute{Bản thảo nghiên cứu, Việt Nam\\
+\email{}}
+
+\maketitle
+
+\begin{abstract}
+Dự đoán địa điểm kế tiếp từ quỹ đạo GPS đòi hỏi đồng thời mô hình hóa chuỗi, biểu diễn bất định và kiểm soát chi phí suy luận. Chúng tôi đề xuất \method, một khung gồm: mô hình định lượng học chuyển tiếp; mô hình ngôn ngữ lớn (LLM) đóng vai trò teacher ngữ nghĩa; student gọn nhẹ nhận chắt lọc tri thức; và trạng thái belief Bayes được cập nhật theo thời gian. LLM chỉ được gọi khi bộ định tuyến bất định cho rằng mô hình cục bộ chưa đủ tin cậy. Thực nghiệm gồm 13 câu hỏi nghiên cứu trên TIST2015 (12 thành phố) và kiểm chứng chéo trên WWW2019 Shanghai-ISP. Trên TIST2015, E5-dual đạt macro $\Rone=0.1719$, cao hơn E0-CE ($0.1560$); B3-DBN cải thiện xếp hạng so với belief tĩnh nhưng làm xấu calibration. Trên WWW2019, E5-dual đạt $\Rone=0.1361$ và B3-DBN đạt $0.1701$. Kiểm soát frozen-checkpoint xác nhận thứ tự thời gian có tác dụng, trong khi LLM routing và tri thức ngữ nghĩa chưa tạo lợi ích ổn định. Kết quả cho thấy đóng góp đáng tin cậy nhất đến từ chắt lọc định lượng và belief tuần tự, không phải tăng số lần gọi LLM.
+
+\keywords{Quỹ đạo GPS \and dự đoán địa điểm \and chắt lọc tri thức \and belief Bayes}
+\end{abstract}
+
+\section{Giới thiệu}
+
+Một quỹ đạo GPS là chuỗi quan sát không--thời gian của người dùng hoặc phương tiện. Dự đoán điểm kế tiếp hỗ trợ gợi ý địa điểm, quản lý giao thông và cấp phát tài nguyên mạng. Mô hình tuần tự học tốt mẫu chuyển tiếp nhưng phụ thuộc dữ liệu huấn luyện; ngược lại, LLM có tri thức ngữ nghĩa rộng nhưng tốn chi phí, khó hiệu chỉnh và có thể sinh kết quả không hợp lệ. AgentMove \cite{feng2025agentmove} cho thấy LLM agent có thể kết hợp bộ nhớ cá nhân, tri thức đô thị và mẫu tập thể, song vẫn dựa nhiều vào suy luận trực tiếp của LLM.
+
+\method{} chuyển vai trò của LLM từ ``bộ dự đoán luôn hoạt động'' thành teacher ngoại tuyến và chuyên gia được gọi có chọn lọc. Phân phối của teacher được chắt lọc vào student; belief Bayes sau đó tích lũy bằng chứng theo lịch sử. Thiết kế này hướng tới ba mục tiêu: chất lượng xếp hạng, xác suất có ý nghĩa và chi phí triển khai thấp.
+
+Đóng góp của nghiên cứu gồm:
+\begin{enumerate}
+ \item biểu diễn GPS bằng trạng thái địa điểm rời rạc nhưng vẫn giữ vận tốc, hướng và thời gian;
+ \item chắt lọc kết hợp theo trajectory, velocity, layer và temporal;
+ \item cập nhật belief tuần tự cùng cơ chế gọi LLM theo bất định;
+ \item đánh giá có kiểm soát qua 13 RQ trên hai bộ dữ liệu.
+\end{enumerate}
+
+\section{Nghiên cứu liên quan}
+
+\textbf{Mô hình định lượng.} Markov, RNN/GRU và Transformer học quy luật chuyển tiếp từ chuỗi vị trí. Chúng có suy luận nhanh và đầu ra xác định, nhưng khó tận dụng tri thức đô thị phi cấu trúc. Trong công trình này, nhóm mô hình đó là candidate generator và teacher định lượng, không phải đối thủ tách rời khỏi hệ thống.
+
+\textbf{LLM cho mobility.} AgentMove \cite{feng2025agentmove} phân rã suy luận thành bộ nhớ cá nhân, tri thức thế giới và tri thức tập thể. Điểm còn thiếu là một belief xác suất có thể cập nhật và kiểm định. \method{} vì vậy chỉ dùng LLM để sinh evidence hoặc làm teacher, thay vì giao toàn bộ quyết định cho văn bản tự do.
+
+\textbf{Chắt lọc và mô hình xác suất.} Knowledge distillation truyền phân phối mềm từ teacher sang student \cite{hinton2015distilling}. DBN biểu diễn phụ thuộc giữa trạng thái ẩn qua thời gian \cite{murphy2002dbn}. Chúng tôi kết hợp hai hướng này: student giữ năng lực dự đoán nhanh, còn DBN cập nhật prior theo prefix. Calibration được đánh giá riêng vì xác suất neural thường quá tự tin \cite{guo2017calibration}.
+
+\section{Bài toán và biểu diễn GPS}
+
+Với quỹ đạo quan sát đến thời điểm $t$,
+\begin{equation}
+ \mathcal{T}_{1:t}=\{p_1,\ldots,p_t\},\qquad
+ p_i=(\mathrm{lat}_i,\mathrm{lon}_i,\tau_i[,v_i,h_i]),
+\end{equation}
+ta cần ước lượng $P(p_{t+1}\mid\mathcal{T}_{1:t},\mathcal{C}_t)$, trong đó $\mathcal{C}_t$ chứa ngữ cảnh người dùng và đô thị. Trong thực nghiệm, tọa độ được ánh xạ vào tập ứng viên POI/vùng $\mathcal{V}$; vì vậy đầu ra là phân phối phân loại
+\begin{equation}
+ \vect{q}_t=P(Y_{t+1}=j\mid X_{1:t}),\quad j\in\mathcal{V}.
+\end{equation}
+Cách biểu diễn này phù hợp với dữ liệu check-in và ISP, nhưng không đồng nhất với hồi quy tọa độ liên tục; do đó nghiên cứu báo cáo Recall@$K$, MRR, NLL, Brier và ECE, không báo cáo ADE/FDE.
+
+Đặc trưng $X_t$ gồm địa điểm/vùng, thời gian, thứ trong tuần, vận tốc, hướng di chuyển, điểm dừng và lịch sử. Ý tưởng GPS cốt lõi là không buộc LLM sinh trực tiếp cặp vĩ độ--kinh độ. Thay vào đó, LLM suy luận một trạng thái di chuyển ẩn
+\begin{equation}
+ S_t=(R_t,A_t,I_t,D_t,V_t,H_t),
+\end{equation}
+gồm vùng, hoạt động, ý định, đích, vận tốc và hướng; phân phối địa điểm được giải mã từ belief trên các trạng thái này.
+
+\section{Phương pháp \method}
+
+\subsection{Teacher định lượng và teacher LLM}
+
+\textbf{Stage 1 -- candidate generation.} Teacher định lượng sinh logits $\vect{z}^{Q}_t$ và phân phối đã hiệu chỉnh trên $k$ ứng viên:
+\begin{equation}
+ q_i=\frac{\exp(z_i^Q/\tau)}{\sum_{j\in\mathcal{C}_k}\exp(z_j^Q/\tau)},
+ \qquad c_i\in\mathcal{C}_k.
+\end{equation}
+Nhiệt độ $\tau$ chỉ được fit trên validation. Phân phối $\vect{q}$ vừa là prior cho belief, vừa là soft target cho student.
+
+\textbf{Stage 2 -- structured evidence.} LLM nhận lịch sử, memory và context của từng $c_i$, rồi trả về evidence có cấu trúc thay vì xếp hạng tự do. Với score $r_i$, likelihood được ánh xạ bởi
+\begin{equation}
+ \ell_i=P(E_i\mid Y=c_i)=\sigma(a r_i+b),
+\end{equation}
+trong đó $a,b$ được học trên validation. Evidence ngoài candidate cache nhận likelihood trung tính; test chỉ replay cache bất biến.
+
+\textbf{Stage 3 -- distillation.} Student sinh $\vect{p}^{S}_t=\operatorname{softmax}(\vect{z}^{S}_t)$ và tối ưu
+\begin{align}
+ \mathcal{L}={}&\mathcal{L}_{CE}
+ +\lambda_{KD}T^2D_{KL}\!\left(
+ \operatorname{softmax}(\vect{z}^{Q}/T)\,\|\,
+ \operatorname{softmax}(\vect{z}^{S}/T)\right) \nonumber\\
+ &+\lambda_{tr}\mathcal{L}_{trajectory}
+ +\lambda_{v}\mathcal{L}_{velocity}
+ +\lambda_{\ell}\mathcal{L}_{layer}
+ +\lambda_{\tau}\mathcal{L}_{temporal}.
+\end{align}
+E0--E6 lần lượt bật các thành phần này để tách đóng góp. Teacher, thứ tự quỹ đạo và trạng thái ẩn được kiểm soát riêng.
+
+\subsection{Belief Bayes tuần tự}
+
+Tại mỗi bước, belief trên giả thuyết $H_i$ được cập nhật bởi
+\begin{equation}
+ B_{t+1}(H_i)=
+ \frac{P(E_{t+1}\mid H_i)B_t(H_i)}
+ {\sum_jP(E_{t+1}\mid H_j)B_t(H_j)}.
+\end{equation}
+BN data-only dùng prior theo người dùng và thời gian. DBN bổ sung chuyển tiếp bậc một \cite{murphy2002dbn}
+\begin{equation}
+ P(S_{1:T})=P(S_1)\prod_{t=2}^{T}P(S_t\mid S_{t-1}),
+\end{equation}
+rồi hợp nhất với student bằng geometric fusion
+\begin{equation}
+ P^*(y)\propto
+ P_S(y)^{1-\alpha}\,P_B(y)^{\alpha},\qquad \alpha\in[0,1].
+\end{equation}
+Mọi prior và transition chỉ được fit trên train; $\alpha$ được chọn trên validation.
+
+\subsection{Định tuyến LLM theo bất định}
+
+Entropy và margin được dùng làm tín hiệu bất định:
+\begin{equation}
+ \mathcal{H}(\vect{p})=-\sum_jp_j\log p_j,\qquad
+ m(\vect{p})=p_{(1)}-p_{(2)}.
+\end{equation}
+Router gọi LLM khi $\mathcal{H}(\vect{p})>\gamma_H$ hoặc $m(\vect{p})<\gamma_m$. Ngưỡng được chọn trên validation theo ngân sách; test không tham gia tuning. Toàn bộ luồng được tóm tắt ở Hình~\ref{fig:framework}.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+ node distance=6mm and 7mm,
+ box/.style={draw=blue!55!black,fill=blue!4,rounded corners,align=center,minimum height=8mm,text width=28mm,font=\small},
+ arrow/.style={-{Latex[length=2mm]},thick}
+]
+\node[box] (gps) {Quỹ đạo GPS\\và ngữ cảnh};
+\node[box,right=of gps] (teachers) {Teacher định lượng\\+ evidence LLM};
+\node[box,right=of teachers] (student) {Student\\chắt lọc};
+\node[box,below=of student] (belief) {BN/DBN\\belief tuần tự};
+\node[box,left=of belief] (router) {Entropy/margin\\router};
+\node[box,left=of router] (out) {Phân phối POI\\và Top-$K$};
+\draw[arrow] (gps)--(teachers);
+\draw[arrow] (teachers)--(student);
+\draw[arrow] (student)--(belief);
+\draw[arrow] (belief)--(router);
+\draw[arrow] (router)--(out);
+\draw[arrow,dashed] (router.north) to[bend left=18] (teachers.south);
+\end{tikzpicture}
+\caption{Luồng ngoại tuyến (teacher và chắt lọc) kết hợp suy luận trực tuyến (belief và router).}
+\label{fig:framework}
+\end{figure}
+
+\subsection{Quy trình suy luận}
+
+Thuật toán~\ref{alg:inference} nhấn mạnh ranh giới giữa tính toán bắt buộc và lời gọi LLM có điều kiện.
+\begin{table}[H]
+\caption{Suy luận ba stage cho một prefix quỹ đạo.}
+\label{alg:inference}
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}r X@{}}
+\toprule
+1 & Mã hóa $X_{1:t}$; sinh $\vect{z}^Q$, hiệu chỉnh $\vect{q}$ và lấy $\mathcal{C}_k$.\\
+2 & Cập nhật $B_t$ từ prior người dùng, thời gian và transition DBN.\\
+3 & Hợp nhất student với belief để thu $P^*(Y_{t+1})$.\\
+4 & Tính entropy/margin; nếu vượt ngưỡng thì đọc evidence LLM từ cache.\\
+5 & Cập nhật posterior, chuẩn hóa và trả về Top-$K$ cùng độ tin cậy.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Thiết kế thực nghiệm}
+
+\subsection{Dữ liệu và giao thức}
+
+TIST2015 gồm 12 thành phố: Tokyo, Nairobi, New York, Sydney, Cape Town, Paris, Beijing, Mumbai, San Francisco, London, São Paulo và Moscow. Kết quả neural dùng ba seed 42--44; số liệu chính là macro trung bình thành phố. WWW2019 dùng Shanghai-ISP và ba seed tương tự để kiểm chứng chéo.
+
+\begin{table}[H]
+\caption{Thống kê sau tiền xử lý theo giao thức thực nghiệm.}
+\label{tab:data}
+\centering
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Dữ liệu & Người dùng & Trajectory & Địa điểm & Dài TB & Thành phố\\
+\midrule
+WWW2019 Shanghai-ISP & 1,230 & 6,050 & 3,536 & 4.5664 & 1\\
+TIST2015 & 22,946 & 306,324 & 236,666 & 7.3606 & 12\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai giao thức được giữ riêng: \emph{last-query} dự đoán bước cuối của mỗi trajectory; \emph{all-prefix} dự đoán ở mọi prefix và reset belief tại biên trajectory. Các thí nghiệm LLM chỉ dùng tập bounded hữu hạn do chi phí. Khoảng tin cậy paired được bootstrap theo cùng query/seed và hiệu chỉnh Holm khi kiểm định nhiều giả thuyết.
+
+\subsection{Đối chứng, chỉ số và cài đặt}
+
+Đối chứng gồm Markov/BN/DBN data-only, teacher GRU/Transformer, student CE, các biến thể E0--E6 và AgentMove gốc. Recall@$K$ và MRR đo ranking; NLL, Brier và ECE đo chất lượng xác suất. Mọi checkpoint được chọn trên validation. LLM bounded dùng Qwen2:7b qua Ollama và cache evidence để các ablation dùng đúng cùng phản hồi. Các phép đo latency neural có warm-up và CUDA synchronization; run có GPU contention không được dùng làm bằng chứng công bố.
+
+\subsection{Câu hỏi nghiên cứu và tiêu chí đạt}
+
+\begin{table}[H]
+\caption{Mười ba câu hỏi nghiên cứu. ``Đạt'' nghĩa là artifact đủ và kết luận thỏa tiêu chí ở cột cuối.}
+\label{tab:rqs}
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{@{}c X X l@{}}
+\toprule
+RQ & Câu hỏi và mục tiêu & Tiêu chí kết luận & Trạng thái\\
+\midrule
+1 & Baseline có tái lập được không? & Cùng split/candidate; có baseline neural và bounded 12 thành phố. & \good\\
+2 & Bayes data-only có đủ mạnh không? & BN/DBN so paired với teacher định lượng. & \good\\
+3 & Evidence LLM mang thêm tri thức không? & M2/M4 tốt hơn đối chứng trên bounded matched test. & \partialok\\
+4 & Chắt lọc và evolution có cải thiện CE? & E1--E5 tốt hơn E0 qua nhiều seed/thành phố. & \good\\
+5 & Thứ tự thời gian có thực sự được dùng? & Frozen checkpoint giảm khi reverse/random. & \good\\
+6 & Hai trục evolution bổ trợ nhau không? & E5 vượt các biến thể một trục có kiểm soát. & \partialok\\
+7 & Belief memory có ích không? & B3 tăng ranking so với B0/B2, không leakage. & \good\\
+8 & Router giảm gọi LLM mà giữ/tăng chất lượng? & Vượt never/random cùng ngân sách. & Chưa\\
+9 & Tri thức semantic có nguyên nhân rõ không? & True memory/context vượt corruption. & Chưa\\
+10 & Kết quả bền theo kiến trúc teacher? & Distillation tốt hơn CE với GRU và Transformer. & \good\\
+11 & Xác suất có hiệu chỉnh được không? & Fit validation; cải thiện mục tiêu trên test. & \partialok\\
+12 & Đổi chất lượng lấy chi phí thế nào? & Timing cùng harness, không contention. & \partialok\\
+13 & Mô hình chịu thiếu/nhiễu đầu vào không? & Suy giảm có kiểm soát dưới perturbation. & \partialok\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+{\sloppy\input{rq_reports}}
+
+\iffalse
+\section{Kết quả trên TIST2015}
+
+\subsection{Chất lượng dự đoán và chắt lọc}
+
+Bảng~\ref{tab:tist-main} cho thấy tín hiệu ổn định nhất đến từ teacher định lượng và chắt lọc. E1-KD tăng macro $\Rone$ từ 0.1560 lên 0.1678; E5-dual đạt 0.1719 và MRR 0.2458. So với student chỉ CE ở RQ10, student chắt lọc từ GRU tăng $\Rone$ từ 0.1560 lên 0.1705 và giảm NLL từ 7.4345 xuống 6.6472. Teacher Transformer cũng cải thiện CE, nhưng GRU-distilled có macro tốt hơn nhẹ; do đó lợi ích không phụ thuộc duy nhất vào một teacher.
+
+\begin{table}[H]
+\caption{Kết quả macro TIST2015 12 thành phố. Neural: mean qua seed 42--44; Bayesian dùng all-prefix.}
+\label{tab:tist-main}
+\centering
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Biến thể & $\Rone$ & $\Rfive$ & $\Rten$ & MRR & NLL$\downarrow$ & ECE$\downarrow$\\
+\midrule
+E0-CE & .1560 & .3048 & .3535 & .2259 & 7.4079 & .0570\\
+E1-KD & .1678 & .3207 & .3774 & .2412 & 6.7101 & .0490\\
+E5-dual & \textbf{.1719} & \textbf{.3275} & .3843 & \textbf{.2458} & 6.6737 & .0479\\
+\midrule
+B0-static & .1610 & .3301 & .3954 & .2410 & \textbf{6.4706} & .0488\\
+B3-DBN & .1672 & .3413 & \textbf{.4069} & .2493 & 6.6528 & .1323\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+RQ2 xác nhận teacher định lượng vượt DBN data-only: $\Rone$ 0.1718 so với 0.1548 và MRR 0.2440 so với 0.2248. DBN lại vượt BN trong paired test Tokyo về mọi chỉ số ranking, cho thấy transition hữu ích nhưng chưa thay thế biểu diễn neural.
+
+RQ3 cho kết quả thận trọng. Trên bounded macro, M1 data-only có $\Rone=0.0221$, M2 LLM-only 0.0329, M3 quantitative 0.1351 và M4 kết hợp 0.1359. Phần tăng của M4 so với M3 nhỏ và chưa có bằng chứng paired mạnh. Vì vậy LLM evidence không phải nguồn cải thiện chính.
+
+\subsection{Thứ tự thời gian và belief tuần tự}
+
+Ở RQ5, E5 correct đạt $\Rone=0.1719$, so với reverse 0.1638 và random 0.1648. Kiểm định paired tại Tokyo xác nhận correct tốt hơn hai corruption trên Recall@$K$, MRR, NLL và Brier. RQ6 cho thấy E5 đứng đầu về ranking, nhưng nhiều chênh lệch với biến thể đơn trục không còn ý nghĩa sau Holm; kết luận phù hợp nhất là dual evolution hữu ích tổng thể, chưa chứng minh mọi loss thành phần đều cần thiết.
+
+Trong RQ7, B3-DBN tăng MRR từ 0.2410 lên 0.2493 và $\Rten$ từ 0.3954 lên 0.4069. Đổi lại, NLL tăng 0.1823 và ECE tăng từ 0.0488 lên 0.1323. Belief tuần tự do đó cải thiện xếp hạng nhưng làm phân phối quá tự tin.
+
+\subsection{LLM routing, semantic và độ bền}
+
+RQ8 không đạt tiêu chí chính. Trên bounded 12 thành phố, entropy router ($\Rone=0.1780$) không vượt never-call ($0.1805$) và chỉ nhỉnh hơn random-budget về MRR. Oracle vẫn cao hơn, cho thấy còn tín hiệu nhưng entropy/margin chưa nhận diện đúng query hưởng lợi.
+
+RQ9 cũng chưa xác nhận đóng góp semantic nhất quán. Memory thật đạt macro $\Rone=0.1794$; random-user là 0.1661, nhưng context-random-POI đạt 0.1837. Kết quả này có thể chịu ảnh hưởng bởi prompt, candidate coverage và invalid response; chưa thể diễn giải như quan hệ nhân quả của tri thức LLM.
+
+RQ11 chỉ ra calibration phải tối ưu theo mục tiêu. Ví dụ B3-DBN tại Tokyo giảm NLL từ 7.4876 xuống 6.4306 và ECE từ 0.1423 xuống 0.0193 khi chọn nhiệt độ theo từng mục tiêu; một nhiệt độ duy nhất không đồng thời tối ưu NLL, Brier và ECE \cite{guo2017calibration}.
+
+RQ12 cho thấy student-GRU có 8.62 triệu tham số, nhỏ hơn teacher-GRU 10.41 triệu và đạt khoảng 150 nghìn query/s ở batch 256 trên máy đo Tokyo. B3 chỉ đạt khoảng 580 query/s vì fusion theo prefix. Các benchmark 12 thành phố có GPU contention nên chỉ dùng nội bộ, không coi là số liệu latency công bố.
+
+RQ13 cho thấy độ bền còn hạn chế: tại Tokyo, $\Rone$ giảm từ 0.1471 (clean) xuống 0.1412 khi bỏ 50\% GPS, 0.0928 với nhiễu vị trí 500 m và 0.0517 khi gán sai người dùng. Sai ngữ cảnh người dùng là failure mode nghiêm trọng nhất.
+
+\section{Kiểm chứng trên WWW2019 Shanghai-ISP}
+
+\begin{table}[H]
+\caption{WWW2019 Shanghai-ISP, mean $\pm$ std qua seed 42--44. Hai khối dùng giao thức khác nhau.}
+\label{tab:www}
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Biến thể & $\Rone$ & $\Rfive$ & $\Rten$ & MRR\\
+\midrule
+E0-CE & $.1242\pm.0066$ & $.2374\pm.0055$ & $.2810\pm.0066$ & $.1799\pm.0076$\\
+E1-KD & $.1338\pm.0009$ & $.2414\pm.0046$ & $.2809\pm.0078$ & $.1866\pm.0029$\\
+E5-dual & $\mathbf{.1361\pm.0054}$ & $\mathbf{.2513\pm.0038}$ & $\mathbf{.2855\pm.0057}$ & $\mathbf{.1911\pm.0054}$\\
+\midrule
+B0-static & $.1259\pm.0028$ & $.2370\pm.0026$ & $.2732\pm.0040$ & $.1798\pm.0034$\\
+B3-DBN & $\mathbf{.1701\pm.0043}$ & $\mathbf{.3093\pm.0055}$ & $\mathbf{.3414\pm.0037}$ & $\mathbf{.2345\pm.0041}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Kết quả ở Bảng~\ref{tab:www} tái hiện ba xu hướng. Thứ nhất, E1 tăng $\Rone$ 0.0097 so với E0 (Holm $p=0.0276$) và cải thiện NLL/Brier. Thứ hai, E5 tăng $\Rfive$ 0.0099 so với E1 (Holm $p=0.0075$) và giảm NLL 0.1083. Thứ ba, B3 tăng mạnh ranking so với B0 nhưng NLL, Brier và ECE xấu hơn; đây là cùng trade-off đã thấy ở TIST2015.
+
+Kiểm soát frozen-checkpoint giải quyết một điểm dễ gây hiểu nhầm. Khi mỗi order mode được huấn luyện lại, mô hình có thể thích nghi nên khác biệt correct--reverse không rõ. Khi giữ nguyên checkpoint E5-correct và chỉ đảo input, correct vượt reverse ở $\Rone$ 0.0118, $\Rfive$ 0.0130, $\Rten$ 0.0081 và MRR 0.0114; cả sáu chỉ số gồm NLL/Brier đều có ý nghĩa sau Holm. Với random, $\Rone$, MRR và Brier vẫn có ý nghĩa. Do 95.1\% query thực sự đổi khi reverse, kết quả này xác nhận mô hình sử dụng thứ tự thời gian thay vì artefact của corruption.
+
+Thí nghiệm LLM trên WWW2019 chỉ gồm 200 query: $\Rone=0.195$, candidate recall $=0.34$ và latency trung bình 3.05 s/query. Đây là kết quả bounded, khác phạm vi và giao thức nên không được dùng để khẳng định LLM vượt mô hình neural full-test.
+
+\section{Trả lời các câu hỏi nghiên cứu}
+
+Theo logic trình bày của nghiên cứu tham chiếu, mỗi RQ dưới đây được trả lời theo ba bước:
+câu hỏi, bằng chứng thực nghiệm và kết luận. Ký hiệu ``đạt'' chỉ có nghĩa là bằng chứng hiện có
+thỏa tiêu chí đã khóa trong Bảng~\ref{tab:rqs}; nó không mở rộng phạm vi ngoài hai bộ dữ liệu.
+
+\subsection{RQ1 -- Các baseline có tái lập được không?}
+\textit{Câu hỏi.} Các baseline định lượng và AgentMove có tái lập ổn định trên preprocessing,
+temporal split và candidate space đã khóa không?
+\textit{Mục tiêu.} Thiết lập mốc tham chiếu công bằng cho các RQ sau.
+\textit{Kết quả.} Trên TIST2015, các baseline neural matched đã đủ ba seed; Markov và AgentMove được chạy
+bounded trên đủ 12 thành phố. Teacher-GRU đạt macro $\Rone=0.1718$, trong khi Markov
+bounded đạt $0.1121$ và AgentMove bounded đạt $0.1340$. Hai nhóm dùng query protocol khác
+nhau nên không tính chênh lệch paired. \textbf{Trả lời: đạt về khả năng tái lập}, với điều kiện
+báo cáo tách riêng full-test và bounded.
+
+\subsection{RQ2 -- Bayes data-only có thể thay thế mô hình neural không?}
+\textit{Câu hỏi.} Prior user/time và transition đạt chất lượng nào khi không dùng LLM/OSM;
+DBN có tốt hơn BN và thay được teacher neural không?
+\textit{Mục tiêu.} Tách đóng góp thống kê dữ liệu khỏi representation học sâu.
+\textit{Kết quả.} Tại Tokyo, DBN data-only tăng $\Rone$ từ 0.0840 của BN lên 0.1042
+(Holm $p=0.0030$), nhưng vẫn thấp hơn teacher định lượng 0.1436; chênh lệch teacher--DBN
+là 0.0395 và có ý nghĩa. \textbf{Trả lời: không}. Transition Bayes hữu ích, nhưng representation
+neural vẫn là nguồn tín hiệu chính.
+
+\subsection{RQ3 -- Evidence LLM bổ sung gì cho tín hiệu định lượng?}
+\textit{Câu hỏi.} Structured mobility belief từ LLM có cải thiện data-only và bổ sung thông tin
+ngoài quantitative teacher không?
+\textit{Mục tiêu.} Đo incremental utility của LLM qua M2--M1 và M4--M3.
+\textit{Kết quả.} Trong thí nghiệm bounded matched, M2 LLM-only tăng $\Rone$ từ 0.0350 lên 0.0550 so với
+M1 data-only nhưng không có ý nghĩa sau Holm. M4 kết hợp đạt 0.1250, gần M3 định lượng
+0.1150; chênh lệch M4--M3 cũng không có ý nghĩa. \textbf{Trả lời: chưa xác nhận lợi ích riêng
+của LLM}; bằng chứng mạnh đến từ teacher định lượng.
+
+\subsection{RQ4 -- Distillation tiến hóa có tốt hơn CE không?}
+\textit{Câu hỏi.} KD, trajectory/velocity alignment và temporal/layer evolution đóng góp bao
+nhiêu; dual-axis có tốt hơn CE/KD cơ bản không?
+\textit{Mục tiêu.} Ablation E0--E5 để xác định nguồn tạo gain.
+\textit{Kết quả.} Trên macro 12 thành phố, E1-KD tăng $\Rone$ từ 0.1560 của E0-CE lên 0.1678; E5-dual
+đạt 0.1719 và MRR 0.2458. Trên Shanghai, E1 cũng tăng $\Rone$ 0.0097 so với E0
+(Holm $p=0.0276$), còn E5 tăng $\Rfive$ 0.0099 so với E1 ($p=0.0075$).
+\textbf{Trả lời: đạt}; KD tổng quát hóa, còn lợi ích dual thể hiện rõ nhất ở chất lượng Top-5.
+
+\subsection{RQ5 -- Mô hình có thực sự sử dụng thứ tự thời gian không?}
+\textit{Câu hỏi.} Khi phá vỡ thứ tự trajectory, chất lượng dự đoán có suy giảm không?
+\textit{Mục tiêu.} Kiểm chứng mô hình học động lực tuần tự thay vì chỉ ghi nhớ tần suất POI.
+\textit{Kết quả.} Trên TIST2015, E5-correct đạt $\Rone=0.1719$, cao hơn reverse 0.1638 và random 0.1648.
+Kiểm soát frozen-checkpoint tại Shanghai cho correct vượt reverse lần lượt 0.0118, 0.0130,
+0.0081 ở Recall@1/5/10; cả ba đều có ý nghĩa sau Holm. \textbf{Trả lời: đạt}; chronology là
+tín hiệu thực, không chỉ là hệ quả của việc huấn luyện lại trên dữ liệu corruption.
+
+\subsection{RQ6 -- Hai trục evolution có bổ trợ nhau không?}
+\textit{Câu hỏi.} Evolution theo layer hay thời gian quan trọng hơn; kết hợp hai trục có thêm lợi ích không?
+\textit{Mục tiêu.} Liên hệ alignment với ranking, calibration và độ dài trajectory.
+\textit{Kết quả.} E5-dual đứng đầu macro ranking với $\Rone=0.1719$, nhưng nhiều so sánh paired với biến thể
+một trục không còn ý nghĩa sau hiệu chỉnh Holm. Ở Tokyo, E5 cải thiện NLL so với E4-layer
+và E6-temporal, trong khi lợi ích Recall nhỏ. \textbf{Trả lời: đạt một phần}; dual evolution có
+lợi ích tổng thể nhưng chưa chứng minh mọi loss thành phần đều cần thiết.
+
+\subsection{RQ7 -- Belief memory tuần tự có cải thiện dự đoán không?}
+\textit{Câu hỏi.} Belief theo chuỗi có tốt hơn suy luận độc lập tại từng bước không?
+\textit{Mục tiêu.} So sánh history, recursive posterior và transition-aware DBN, đồng thời đo
+trade-off ranking--calibration.
+\textit{Kết quả.} Trên TIST2015, B3-DBN tăng MRR từ 0.2410 lên 0.2493 và $\Rten$ từ 0.3954 lên 0.4069
+so với B0-static. Trên Shanghai, B3 đạt $\Rone=0.1701$ so với 0.1259 của B0. Tuy nhiên,
+ECE TIST2015 tăng từ 0.0488 lên 0.1323. \textbf{Trả lời: đạt về ranking nhưng không đạt về
+calibration}; belief động cần hiệu chỉnh hậu nghiệm.
+
+\subsection{RQ8 -- Uncertainty routing có giảm chi phí mà giữ chất lượng không?}
+\textit{Câu hỏi.} Có thể giảm lời gọi LLM mà giữ chất lượng gần Always và vượt random cùng ngân sách không?
+\textit{Mục tiêu.} Tìm điểm vận hành quality--call-rate--token--latency.
+\textit{Kết quả.} Trong bounded 12 thành phố, entropy router gọi LLM có chọn lọc nhưng đạt $\Rone=0.1780$,
+thấp hơn never-call 0.1805 và không vượt random-budget một cách ổn định. Oracle tốt hơn cho
+thấy tồn tại query có thể hưởng lợi, song entropy/margin chưa tìm đúng chúng. \textbf{Trả lời:
+chưa đạt}; giảm call rate chưa chuyển thành lợi ích accuracy--cost.
+
+\subsection{RQ9 -- Kiểm chứng tri thức ngữ nghĩa}
+\textit{Câu hỏi.} Personal memory và world context có thực sự ảnh hưởng đến dự đoán không?
+\textit{Mục tiêu.} Dùng corruption từng trục để tách lợi ích dự đoán khỏi sai lệch do prompt.
+\textit{Kết quả.} Memory thật đạt macro $\Rone=0.1794$, tốt hơn random-user 0.1661; ngược lại,
+context-random-POI đạt 0.1837, cao hơn context thật. Không có hiệu ứng corruption nhất quán
+giữa các chỉ số. \textbf{Trả lời: chưa đạt}; chưa đủ bằng chứng để quy cải thiện cho tri thức
+semantic của LLM.
+
+\subsection{RQ10 -- Distillation có bền theo kiến trúc teacher không?}
+\textit{Câu hỏi.} Lợi ích distillation có phụ thuộc vào một kiến trúc teacher cụ thể không?
+\textit{Mục tiêu.} Giữ cố định student/split/candidate và chỉ thay GRU bằng Transformer teacher.
+\textit{Kết quả.} Tại Tokyo, student CE đạt $\Rone=0.1338$; student chắt lọc từ GRU và Transformer lần lượt
+đạt 0.1475 và 0.1486. Cả hai đều vượt CE trên Recall@1/5/10, MRR, NLL và Brier với paired
+test có ý nghĩa. Chênh lệch ranking giữa hai teacher nhỏ và phần lớn không có ý nghĩa.
+\textbf{Trả lời: đạt}; lợi ích distillation không phụ thuộc duy nhất vào một teacher.
+
+\subsection{RQ11 -- Xác suất đầu ra có thể được hiệu chỉnh không?}
+\textit{Câu hỏi.} Một temperature có thể đồng thời tối ưu NLL, Brier và ECE sau distillation/DBN không?
+\textit{Mục tiêu.} Đo và sửa miscalibration theo từng objective.
+\textit{Kết quả.} Temperature scaling fit trên validation làm giảm NLL cho mọi biến thể Tokyo. Với B3-DBN,
+NLL giảm từ 7.4876 xuống 6.4306 và ECE giảm từ 0.1423 xuống 0.0193 khi chọn nhiệt độ theo
+từng mục tiêu. Một nhiệt độ duy nhất đôi khi giảm NLL nhưng làm xấu Brier/ECE.
+\textbf{Trả lời: đạt một phần}; calibration hiệu quả khi objective được khai báo trước.
+
+\subsection{RQ12 -- Đánh đổi accuracy--efficiency là gì?}
+\textit{Câu hỏi.} Accuracy--latency--throughput--memory thay đổi thế nào giữa teacher, student,
+Bayesian fusion và LLM routing?
+\textit{Mục tiêu.} Xác định điểm vận hành cho single-request và batch inference.
+\textit{Kết quả.} Student-GRU có 8.62 triệu tham số, nhỏ hơn teacher-GRU 10.41 triệu, và đạt khoảng
+150 nghìn query/s ở batch 256 tại Tokyo. B3-DBN còn khoảng 580 query/s do fusion theo
+prefix; LLM bounded chậm hơn nhiều bậc độ lớn. \textbf{Trả lời: đạt cho profiling Tokyo}; số
+đo 12 thành phố có GPU contention chỉ dùng nội bộ, không phải bằng chứng công bố.
+
+\subsection{RQ13 -- Mô hình bền đến đâu trước đầu vào thiếu hoặc nhiễu?}
+\textit{Câu hỏi.} Mô hình ổn định đến đâu khi GPS, timestamp, vị trí hoặc user/time context thiếu hay sai?
+\textit{Mục tiêu.} Xác định failure mode, dose-response và nguồn context quan trọng khi triển khai.
+\textit{Kết quả.} Tại Tokyo, $\Rone$ giảm từ 0.1471 trên dữ liệu sạch xuống 0.1412 khi bỏ 50\% GPS,
+0.0928 khi thêm nhiễu vị trí 500 m và 0.0517 khi gán sai người dùng. \textbf{Trả lời: đạt một
+phần}; mô hình chịu được thiếu điểm nhẹ, nhưng rất nhạy với nhiễu lớn và sai user context.
+
+\fi
+
+\section{Thảo luận và giới hạn}
+
+Hai bộ dữ liệu cùng ủng hộ kết luận chính: chắt lọc định lượng cải thiện CE; belief động cải thiện ranking; và thứ tự thời gian là tín hiệu thực. Tuy nhiên, belief động cần calibration riêng. LLM hiện phù hợp hơn với vai trò teacher hoặc chuyên gia hiếm khi gọi, vì evidence trực tiếp và router chưa cho lợi ích ổn định so với chi phí.
+
+Phạm vi kết luận có bốn giới hạn. Thứ nhất, TIST2015 là macro 12 thành phố; WWW2019 chỉ có Shanghai-ISP. Thứ hai, neural last-query không so trực tiếp trị tuyệt đối với Bayesian all-prefix. Thứ ba, LLM chỉ chạy bounded query. Cuối cùng, RQ11--RQ13 chưa có kiểm chứng chéo đa thành phố đầy đủ. Vì vậy, công trình chưa khẳng định tổng quát hóa cho mọi dạng GPS liên tục hay mọi đô thị.
+
+\section{Kết luận}
+
+\method{} kết hợp teacher định lượng, LLM semantic, student chắt lọc và belief Bayes tuần tự cho dự đoán địa điểm kế tiếp. Thực nghiệm trên TIST2015 và WWW2019 cho thấy cải thiện đáng tin cậy nhất đến từ KD và DBN; frozen-checkpoint xác nhận cơ chế thời gian. Ngược lại, LLM routing và semantic evidence chưa đủ ổn định. Hướng tiếp theo là học router từ realized gain, hiệu chỉnh belief đa mục tiêu và mở rộng robustness/calibration sang nhiều thành phố mà không thay đổi giao thức đánh giá.
+
+\clearpage
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}
