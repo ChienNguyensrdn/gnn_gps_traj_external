@@ -13,6 +13,21 @@ Thực nghiệm được tiến hành trên **TIST2015–Tokyo**, sử dụng ch
 Transition và prior chỉ được ước lượng trên tập train. Trọng số kết hợp được
 chọn trên validation; test không được dùng để điều chỉnh mô hình.
 
+### Mục tiêu
+
+Xác định dạng memory nào thực sự bổ sung thông tin cho frozen E5-Dual: history
+frequency, recursive posterior hay transition-aware DBN; đồng thời đo đánh đổi
+giữa ranking và độ tin cậy xác suất.
+
+### Tiêu chí đạt
+
+- Belief reset ở biên trajectory và mỗi query chỉ dùng prefix đã quan sát.
+- Transition/prior chỉ fit train, weight chỉ chọn validation.
+- Một cơ chế memory được xem là cải thiện nếu vượt B0 trên paired Recall/MRR
+  sau Holm; NLL/Brier/ECE phải báo cáo để phát hiện over-confidence.
+- RQ hoàn thành khi đủ B0–B3 và per-query prediction; weight bằng 0 hoặc negative
+  result vẫn là kết quả hợp lệ.
+
 ## 2. Các biến thể
 
 - **B0-static:** E5-dual suy luận độc lập tại mỗi bước, không duy trì belief.
@@ -116,4 +131,14 @@ Claim phù hợp:
 - Per-query paired predictions — **đủ**.
 - Validation-only hyperparameter selection — **đạt**.
 - RQ7 Tokyo gate — **ready**.
-- TIST2015 12-city gate — **chưa hoàn thành**.
+- TIST2015 12-city artifact gate — **ready-internal-gpu-contention**.
+
+## 8. Kết quả mở rộng TIST2015 — 12 thành phố
+
+| Variant | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| B0-static | 0,160954 ± 0,001012 | 0,330134 ± 0,002221 | 0,395361 ± 0,003203 | 0,241040 ± 0,000866 | 6,470550 ± 0,003835 | 0,943010 ± 0,000636 | 0,048827 ± 0,003404 |
+| B3-dbn | 0,167185 ± 0,000984 | 0,341297 ± 0,001190 | 0,406880 ± 0,002437 | 0,249301 ± 0,001003 | 6,652804 ± 0,006104 | 0,967838 ± 0,001750 | 0,132316 ± 0,003429 |
+
+B3 cải thiện toàn bộ ranking macro nhưng làm xấu NLL, Brier và ECE, nhất quán
+với trade-off Tokyo. Paired p-value Tokyo không chứng minh significance 12-city.

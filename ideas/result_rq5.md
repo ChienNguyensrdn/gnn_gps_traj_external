@@ -10,6 +10,20 @@ RQ5 kiểm tra liệu BeliefMove-Evo có thực sự học quan hệ tuần tự
 
 Nếu mô hình sử dụng thông tin tuần tự, `correct` phải tốt hơn `reverse` và `random`. Nếu kết quả gần như không đổi, mô hình có thể chủ yếu dựa vào tần suất hoặc sự hiện diện của POI thay vì động lực di chuyển.
 
+### Mục tiêu
+
+Kiểm chứng trực tiếp rằng temporal order là tín hiệu nhân quả mà mô hình khai
+thác, thay vì mô hình chỉ ghi nhớ tần suất hoặc tập hợp POI.
+
+### Tiêu chí đạt
+
+- Corruption chỉ đổi thứ tự input, không đổi target, split hoặc candidate set.
+- So sánh phải paired trên cùng query và seed.
+- Để kết luận mô hình dùng thứ tự, `correct` phải vượt cả `reverse` và `random`
+  trên Recall/MRR với CI không chứa 0 và Holm-adjusted p < 0,05.
+- Nếu một corruption không khác correct, RQ vẫn hoàn thành nhưng giả thuyết chỉ
+  được hỗ trợ một phần.
+
 ## 2. Thiết lập thí nghiệm
 
 Mô hình được sử dụng là `E5-dual`, cấu hình đầy đủ của distillation tiến hóa biểu diễn:

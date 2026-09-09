@@ -6,6 +6,20 @@
 
 RQ11 kiểm tra ảnh hưởng của distillation và Bayesian update tới NLL, Brier và ECE, đồng thời xác định liệu một temperature duy nhất có tối ưu được mọi khía cạnh calibration hay không.
 
+### Mục tiêu
+
+Đo và sửa miscalibration theo từng mục tiêu xác suất, đồng thời làm rõ trade-off
+giữa NLL, Brier và ECE thay vì giả định một temperature tối ưu tất cả.
+
+### Tiêu chí đạt
+
+- Temperature chỉ fit validation và áp dụng một lần lên test.
+- Distillation last-query và Bayesian all-prefix phải báo cáo riêng.
+- Mỗi objective được xem là cải thiện khi metric mục tiêu tốt hơn identity với
+  CI phù hợp; không yêu cầu cùng một temperature cải thiện đồng thời mọi metric.
+- RQ hoàn thành khi có identity, NLL-, Brier- và ECE-optimal calibration cùng
+  reliability analysis; trade-off âm phải được báo cáo đầy đủ.
+
 - `identity`: không calibration, luôn dùng `T=1`.
 - `nll`: temperature tối thiểu hóa NLL trên validation.
 - `brier`: temperature tối thiểu hóa Brier trên validation.
@@ -132,8 +146,20 @@ Không được tuyên bố một temperature duy nhất tối ưu mọi calibra
 - ECE phụ thuộc cách chia bin; báo cáo kèm Adaptive ECE và reliability diagram để giảm phụ thuộc vào một cách binning.
 - Temperature được chọn riêng theo seed trên validation; cột T là trung bình của ba seed.
 - Distillation và Bayesian dùng hai protocol khác nhau, không so trực tiếp trị tuyệt đối.
-- Kết quả chỉ áp dụng cho TIST2015–Tokyo, seed 42–44; chưa phải 12-city.
+- Phân tích calibration đa mục tiêu chi tiết áp dụng cho Tokyo; snapshot macro 12-city hiện chỉ xuất các hàng identity/reference.
 
 ## 8. Publication gate
 
-RQ11 đạt gate nội bộ cho Tokyo: đủ seed 42–44, đủ identity/NLL/Brier/ECE predictions, temperature chỉ fit validation, test đóng băng, paired NLL/Brier tests đã Holm-correct và ECE có paired bootstrap CI. Gate đa thành phố chưa hoàn thành.
+RQ11 đạt gate nội bộ cho Tokyo. Artifact 12-city đã đủ, nhưng summary hiện tại
+chưa xuất đầy đủ các hàng post-calibration nên chưa đạt gate báo cáo calibration
+đa mục tiêu 12-city.
+
+## 9. Snapshot 12 thành phố hiện có
+
+| Reference | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| B0-static identity | 0,160954 ± 0,001012 | 0,330134 ± 0,002221 | 0,395361 ± 0,003203 | 0,241040 ± 0,000866 | 6,470550 ± 0,003835 | 0,943010 ± 0,000636 | 0,048827 ± 0,003404 |
+| B3-dbn identity | 0,167185 ± 0,000984 | 0,341297 ± 0,001190 | 0,406880 ± 0,002437 | 0,249301 ± 0,001003 | 6,652804 ± 0,006104 | 0,967838 ± 0,001750 | 0,132316 ± 0,003429 |
+
+Hai hàng này là reference trước calibration. Cần aggregate các hàng
+post-calibration theo từng objective trước khi đưa ra kết luận RQ11 đa thành phố.

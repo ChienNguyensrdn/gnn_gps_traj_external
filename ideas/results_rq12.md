@@ -2,6 +2,25 @@
 
 > Batch-1 và batch-256 được báo cáo riêng. Neural/Bayesian dùng warm-up và CUDA synchronization; LLM latency lấy từ live cache-generation của RQ8 và được ghi nhãn bounded.
 
+## Câu hỏi nghiên cứu
+
+BeliefMove-Evo đạt đánh đổi accuracy–latency–throughput–memory như thế nào so
+với teacher, CE student, Bayesian fusion và LLM routing?
+
+### Mục tiêu
+
+Xác định điểm vận hành thực tế cho single-request và batch inference, đồng thời
+tách chi phí online khỏi training/cache construction ngoại tuyến.
+
+### Tiêu chí đạt
+
+- Benchmark có warm-up, CUDA synchronization, cùng hardware và timing harness.
+- Batch 1 và batch 256, last-query và all-prefix phải báo cáo riêng.
+- Không có foreign GPU process; nếu có chỉ được gắn nhãn nội bộ, không publication.
+- Một phương án Pareto tốt khi tăng quality mà không bị phương án khác đồng thời
+  vượt về quality, latency và memory; không chọn chỉ dựa trên một metric.
+- RQ hoàn thành nội bộ khi đủ artifact, nhưng chỉ đạt publication gate khi GPU sạch.
+
 ## 1. Batch-1 — độ trễ single-request
 
 ### Neural — last-query
@@ -92,4 +111,16 @@ LLM routing chậm hơn neural/Bayesian nhiều bậc độ lớn. Policy `entro
 - Aggregate mặc định từ chối run có GPU process ngoại lai. Nếu summary có `gpu_contention_allowed=true`, kết quả chỉ là provisional và không dùng làm số publication cuối cùng.
 - Offline teacher training và LLM cache construction ghi N/A vì chưa có timer chuẩn từ đầu.
 - RQ8 là bounded limit hữu hạn và không cùng timing harness với PyTorch.
-- Kết quả hiện chỉ áp dụng cho Tokyo, ba seed 42–44 và hardware đã ghi trong JSON; chưa phải kết quả 12-city hoặc cross-hardware.
+- Phân tích timing chi tiết phía trên áp dụng cho Tokyo; macro 12-city được báo cáo riêng bên dưới.
+
+## 7. Kết quả mở rộng TIST2015 — 12 thành phố
+
+| Profile | Variant | R@1 | Throughput (query/s) |
+|---|---|---:|---:|
+| batch-1 | student-gru | 0,170549 ± 0,001154 | 988,256615 ± 16,469202 |
+| batch-256 | student-gru | 0,170549 ± 0,001154 | 148798,184329 ± 1430,972074 |
+
+Batch-256 có throughput cao hơn khoảng 150,6 lần. Tuy nhiên, cả 12 thành phố
+có tổng cộng 72 cảnh báo GPU contention đã được chấp nhận cho phân tích nội bộ.
+Do đó số timing là **provisional**, chưa dùng làm số publication; cần benchmark
+lại không có tiến trình GPU ngoại lai. Summary hiện chỉ xuất hàng student-GRU.

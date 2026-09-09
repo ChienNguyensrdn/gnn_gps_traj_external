@@ -6,6 +6,20 @@
 
 RQ13 kiểm tra mức độ ổn định của BeliefMove-Evo khi dữ liệu GPS, timestamp, vị trí, user context hoặc temporal context bị thiếu/sai. Mọi so sánh dùng cùng query và cùng seed để đo trực tiếp mức suy giảm so với `clean`.
 
+### Mục tiêu
+
+Xác định failure mode, độ nhạy theo liều nhiễu và nguồn context quan trọng nhất
+để định hướng kiểm tra dữ liệu, fallback và cảnh báo khi triển khai.
+
+### Tiêu chí đạt
+
+- Giữ nguyên frozen checkpoint, target và label; chỉ perturb context quan sát.
+- Mọi so sánh paired trên cùng query/seed và có dose-response cho các mức nhiễu.
+- Robustness được hỗ trợ khi suy giảm nhỏ ở nhiễu nhẹ; failure mode được xác nhận
+  khi effect có CI không chứa 0 và Holm-adjusted p < 0,05.
+- RQ hoàn thành khi báo cáo cả độ bền lẫn điểm gãy; không yêu cầu mô hình miễn
+  nhiễm với mọi perturbation.
+
 ## 2. Kết quả test
 
 | Variant | Changed queries | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
@@ -112,4 +126,14 @@ ECE của position-noise thấp hơn clean dù accuracy, NLL và Brier đều x�
 - Target POI/label không đổi trong mọi perturbation.
 - `position-noise` dùng nearest-POI remapping trong test coordinates, không phải raw-coordinate encoder.
 - `context-missing-time` dùng slot 0 làm proxy; mô hình chưa có learned missing-time token.
-- Kết luận hiện chỉ áp dụng cho TIST2015–Tokyo và E5-dual; chưa phải kết quả 12-city hoặc cross-backbone.
+- Phân tích perturbation chi tiết phía trên áp dụng cho Tokyo; snapshot macro 12-city hiện chỉ xuất hàng clean E5-dual.
+
+## 7. Snapshot 12 thành phố hiện có
+
+| Reference | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| clean E5-dual | 0,171903 ± 0,000780 | 0,327474 ± 0,001340 | 0,384337 ± 0,001949 | 0,245829 ± 0,000469 | 6,673658 ± 0,003318 | 0,933304 ± 0,000436 | 0,047902 ± 0,004498 |
+
+Artifact gate 12-city đã đủ, nhưng summary chưa xuất 12 hàng perturbation.
+Vì vậy chưa thể tính degradation và paired clean-vs-corruption ở mức macro;
+RQ13 đa thành phố vẫn **report-incomplete** dù run kỹ thuật đã hoàn tất.

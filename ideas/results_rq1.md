@@ -6,6 +6,22 @@
 
 RQ1 kiểm tra liệu các baseline định lượng và AgentMove có được tái lập ổn định trên preprocessing, temporal split và candidate space đã khóa hay không. Quantitative baseline được chạy với seed 42–44; Markov deterministic và AgentMove bounded được tổng hợp riêng trên đúng 12 thành phố TIST2015.
 
+### Mục tiêu
+
+Thiết lập mốc tham chiếu có thể tái lập để mọi cải thiện ở các RQ sau được so
+sánh trên một nền công bằng, đồng thời phát hiện sai khác do preprocessing,
+split hoặc candidate space thay vì do phương pháp.
+
+### Tiêu chí đạt
+
+- Các baseline stochastic có đủ tối thiểu ba seed và checkpoint chỉ chọn bằng validation.
+- Baseline deterministic không được nhân bản thành pseudo-seed.
+- Các phương pháp trong cùng bảng phải dùng cùng split, query và candidate set.
+- Baseline bounded 12-city phải đủ đúng 12 thành phố; protocol khác nhau phải
+  báo cáo riêng, không tính paired delta chéo protocol.
+- RQ1 được xem là đạt khi artifact đầy đủ, kết quả tái lập ổn định và mọi giới
+  hạn bounded/full được ghi rõ; không yêu cầu một baseline cụ thể phải thắng.
+
 ## 2. Quantitative baselines — Tokyo matched full-test
 
 Seeds: 42, 43, 44. Checkpoint được chọn bằng validation; test chỉ dùng báo cáo cuối.
@@ -74,3 +90,11 @@ Quantitative Tokyo trả lời tính ổn định qua seed trên một matched n
 - AgentMove Acc@10 là N/A vì prediction count bằng 5.
 - Baseline bounded limit 200 không được gọi là full-query result.
 - Việc kiểm tra RQ1 được thực hiện hồi cứu sau các RQ sau và phải được mô tả trung thực trong manuscript.
+
+## 7. Cập nhật phạm vi 12 thành phố
+
+Hai baseline bounded đã chạy đủ 12 thành phố với `limit=200`: Markov-bigram đạt
+macro Acc@1 `0,112147`, Acc@5 `0,210307`, Acc@10 `0,242303`, MRR `0,158516`;
+AgentMove-original đạt Acc@1 `0,134024`, Acc@5 `0,334174`, MRR `0,205829`
+(Acc@10 không có vì chỉ trả về 5 ứng viên). Snapshot không còn thiếu artifact
+bắt buộc. Đây vẫn là kết quả bounded và không so trực tiếp với Tokyo full-test.

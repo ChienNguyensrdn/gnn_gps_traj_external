@@ -14,6 +14,26 @@ RQ4 kiểm tra đóng góp của từng thành phần trong **distillation tiế
 
 Có 6 cấu hình × 3 seed × 2 split được tổng hợp, tương ứng **36 raw runs**. Cả sáu cấu hình trên test split đều vượt publication gate tối thiểu ba seed.
 
+### Câu hỏi nghiên cứu
+
+Các thành phần response KD, trajectory alignment, velocity alignment và temporal
+evolution đóng góp bao nhiêu vào chất lượng student, và cấu hình dual-axis đầy
+đủ có tốt hơn CE/KD cơ bản hay không?
+
+### Mục tiêu
+
+Thực hiện ablation có kiểm soát để xác định gain đến từ thành phần nào, tránh
+gán toàn bộ cải thiện cho kiến trúc đầy đủ khi phần lớn gain có thể đến từ KD.
+
+### Tiêu chí đạt
+
+- Mỗi cấu hình E0–E5 có ít nhất ba seed, cùng split/candidate/student architecture.
+- Checkpoint chỉ chọn bằng validation và metric chính báo cáo trên held-out test.
+- Muốn khẳng định một thành phần tạo cải thiện, effect phải đúng hướng và paired
+  test sau hiệu chỉnh đa kiểm định phải có ý nghĩa.
+- RQ hoàn thành khi đủ ablation và uncertainty; E5 không bắt buộc thắng để
+  protocol được xem là đạt, nhưng claim “E5 tốt hơn” chỉ hợp lệ khi có bằng chứng thống kê.
+
 ## 2. E0–E5 là gì?
 
 Hàm mất mát tổng quát của student:
@@ -126,4 +146,19 @@ So với E1-kd, E5 chỉ cải thiện nhỏ: +0.001828 Recall@1, +0.000380 Reca
 
 - `ready`: test split và đủ ít nhất ba seed.
 - `not ready`: validation split hoặc thiếu số seed tối thiểu.
-- Trạng thái hiện tại: **RQ4 Tokyo test đã đủ gate cho cả E0–E5; đánh giá 12 thành phố chưa hoàn thành**.
+- Trạng thái hiện tại: **RQ4 Tokyo và macro 12 thành phố đã đủ artifact cho E0–E5; benchmark GPU 12-city được chấp nhận ở mức nội bộ do contention**.
+
+## 8. Kết quả mở rộng TIST2015 — 12 thành phố
+
+| Variant | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| E0-ce | 0,156010 ± 0,003212 | 0,304810 ± 0,001440 | 0,353479 ± 0,003175 | 0,225939 ± 0,001327 | 7,407897 | 0,945500 | 0,056975 |
+| E1-kd | 0,167779 ± 0,001362 | 0,320729 ± 0,001699 | 0,377380 ± 0,002057 | 0,241204 ± 0,000401 | 6,710074 | 0,936330 | 0,048971 |
+| E2-kd-traj | 0,167959 ± 0,003202 | 0,322898 ± 0,000915 | 0,379605 ± 0,001087 | 0,242099 ± 0,001252 | 6,695095 | 0,935780 | 0,049009 |
+| E3-kd-vel | 0,169996 ± 0,002341 | 0,323083 ± 0,002324 | 0,379032 ± 0,003040 | 0,243411 ± 0,001450 | 6,698934 | 0,935271 | 0,048632 |
+| E4-layer | 0,171730 ± 0,001667 | 0,324089 ± 0,000622 | 0,380577 ± 0,002676 | 0,244642 ± 0,000951 | 6,694331 | 0,934733 | 0,048252 |
+| E5-dual | 0,171903 ± 0,000780 | 0,327474 ± 0,001340 | 0,384337 ± 0,001949 | 0,245829 ± 0,000469 | 6,673658 | 0,933304 | 0,047902 |
+
+E5 đạt mean macro tốt nhất trên toàn bộ chỉ số. Đây là bằng chứng đa thành phố,
+nhưng bảng macro chưa thay thế paired test theo query/city; không suy diễn
+significance từ độ lệch mean ± std.

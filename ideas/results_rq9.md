@@ -11,6 +11,21 @@ thật.
 `qwen2:7b` và cùng Neural-CGM top-10 candidate set. Mỗi variant có LLM cache
 riêng; corruption deterministic và test không được dùng để tuning.
 
+### Mục tiêu
+
+Kiểm tra causal sensitivity của reranker đối với personal memory và semantic
+context, đồng thời tách predictive utility thật khỏi format failure hoặc thay
+đổi độ dài prompt.
+
+### Tiêu chí đạt
+
+- Chỉ phá một trục mỗi lần; trục còn lại, candidate set và query phải giữ nguyên.
+- `true` phải vượt shuffled/random-donor/none trên paired jointly-valid queries
+  sau Holm để khẳng định nguồn knowledge có predictive utility.
+- Invalid rate, token và latency phải được báo cáo như biến gây nhiễu.
+- RQ hoàn thành dù kết quả âm, nhưng không được claim semantic grounding nếu CI
+  chứa 0 hoặc corruption tốt hơn true.
+
 ## 2. Kết quả tổng thể
 
 | Variant | R@1 | R@5 | R@10 | MRR | Invalid rate | Tokens/query | Latency mean (s) |
@@ -156,4 +171,20 @@ prompt, model, candidate set và bounded Tokyo protocol hiện tại.
 - Ranking sensitivity — đạt.
 - Format reliability claim — được hỗ trợ cho memory-none/context-none.
 - Main semantic contribution claim — chưa được hỗ trợ.
-- TIST2015 12-city gate — chưa hoàn thành.
+- TIST2015 12-city bounded gate — **ready-internal**.
+
+## 11. Kết quả mở rộng TIST2015 — 12 thành phố (bounded)
+
+| Variant | R@1 | R@5 | R@10 | MRR |
+|---|---:|---:|---:|---:|
+| memory-true | 0,179432 | 0,338292 | 0,393452 | 0,256099 |
+| memory-shuffled | 0,179432 | 0,337500 | 0,393452 | 0,255517 |
+| memory-random-user | 0,166140 | 0,323709 | 0,393452 | 0,241119 |
+| memory-none | 0,169602 | 0,333333 | 0,393452 | 0,247643 |
+| context-shuffled | 0,178599 | 0,338791 | 0,393452 | 0,255843 |
+| context-random-poi | 0,183723 | 0,335375 | 0,393452 | 0,257776 |
+| context-none | 0,179057 | 0,334084 | 0,393452 | 0,254183 |
+
+Random-user và bỏ memory gây suy giảm rõ nhất, nhưng context-random-poi lại có
+R@1/MRR cao hơn memory-true. Macro 12-city vì vậy chưa hỗ trợ claim semantic
+nhất quán; cần paired analysis theo city/query trước kết luận nhân quả.

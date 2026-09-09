@@ -22,6 +22,21 @@ Never, Always, Entropy và Margin là deterministic và chỉ được tính m�
 Random được đánh giá bằng 50 permutation seeds; không dùng các bản sao
 deterministic để tạo pseudo-replication.
 
+### Mục tiêu
+
+Tìm điểm vận hành giảm chi phí LLM mà vẫn bảo toàn hoặc cải thiện chất lượng,
+và kiểm tra uncertainty có tốt hơn lựa chọn ngẫu nhiên cùng ngân sách hay không.
+
+### Tiêu chí đạt
+
+- Threshold chỉ fit validation; deterministic policy tính một run, random control
+  dùng nhiều seed thật.
+- Router hữu ích khi giảm call rate/tokens/latency so với Always, giữ quality gần
+  Never/Always và vượt random-budget-matched bằng paired test.
+- Oracle chỉ là upper bound, không được báo cáo như một policy triển khai.
+- RQ hoàn thành khi đủ quality–cost curve và control; nếu router không thắng thì
+  kết luận phải là negative result, không được coi giảm call rate đơn thuần là gain chất lượng.
+
 ## 2. Kết quả tại primary budget
 
 | Router | Runs | R@1 | R@5 | R@10 | MRR | LLM call rate | Latency mean (s) | Latency p95 (s) | Tokens/query |
@@ -178,4 +193,18 @@ Tokyo/12-city.
 - Oracle diagnostic — đạt.
 - RQ8 bounded diagnostic — hoàn thành.
 - Main Entropy/Margin claim — không được hỗ trợ.
-- TIST2015 12-city gate — chưa hoàn thành.
+- TIST2015 12-city bounded gate — **ready-internal**.
+
+## 11. Kết quả mở rộng TIST2015 — 12 thành phố (bounded)
+
+| Router | R@1 | R@5 | R@10 | MRR |
+|---|---:|---:|---:|---:|
+| never | 0,180472 | 0,335458 | 0,393452 | 0,254299 |
+| always | 0,151603 | 0,330875 | 0,393452 | 0,236354 |
+| entropy | 0,177972 | 0,335082 | 0,393452 | 0,252666 |
+| margin | 0,179679 | 0,335458 | 0,393452 | 0,253807 |
+| random-budget-matched | 0,177431 | 0,335417 | 0,393452 | 0,252029 |
+
+Không router nào vượt `never` đồng thời trên các metric macro; `always` còn
+giảm R@1 và MRR. Đây là Qwen2:7b `limit=200`, không phải full-query. Chi phí và
+call-rate chi tiết vẫn được đọc từ báo cáo bounded Tokyo.

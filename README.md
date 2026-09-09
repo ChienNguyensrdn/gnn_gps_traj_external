@@ -620,6 +620,18 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/run_all_cities_rqs.sh llm-bounded
 ./scripts/run_all_cities_rqs.sh aggregate
 ```
 
+Nếu mọi artifact đã đủ nhưng RQ12 còn đúng các marker `GPU_CONTENTION`, có thể
+sinh báo cáo **nội bộ** (không dùng efficiency làm số publication):
+
+```bash
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b \
+  ./scripts/aggregate_internal_full_report.sh
+```
+
+Lệnh này vẫn thất bại nếu thiếu file thật. Output mặc định là
+`ideas/report_summary_internal.md` và
+`results/beliefmove-evo/aggregated/12city/summary_internal.json`.
+
 ### Kiểm chứng cross-dataset trên WWW2019 (Shanghai-ISP)
 
 WWW2019 được chạy như một miền kiểm chứng độc lập, không được gộp với macro 12-city
@@ -653,12 +665,15 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/www2019_pipeline.sh llm-bounded
 
 # Kiểm tra thiếu artifact; aggregate chỉ thành công khi publication gate đầy đủ
 ./scripts/www2019_pipeline.sh status
-./scripts/www2019_pipeline.sh aggregate
+SIGNIFICANCE_ITERATIONS=10000 ./scripts/www2019_pipeline.sh aggregate
 ```
 
 `smoke` ghi vào scope `smoke`, không được đưa vào báo cáo chính. Báo cáo cuối nằm ở
 `ideas/results_www2019.md`; JSON máy đọc nằm ở
 `src/AgentMove/results/beliefmove-evo-www2019/aggregated/www2019_summary.json`.
+Lệnh `aggregate` thực hiện paired bootstrap/sign-flip cho `E1–E0`, `E5–E1`,
+`correct–reverse` và `correct–random`, sau đó áp dụng Holm correction chung.
+ECE chỉ báo cáo mô tả vì không phân rã trực tiếp theo từng query.
 
 Có thể giới hạn tạm thời bằng `CITIES="Tokyo Nairobi"`, nhưng `aggregate` sẽ từ
 chối gắn nhãn 12-city. Dùng `AGGREGATE_SCOPE=neural|bayesian|efficiency|llm` để

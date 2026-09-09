@@ -7,6 +7,7 @@ BASE="${WWW2019_DATA_BASE:-data/hybrid/WWW2019/Shanghai}"
 RESULTS="${WWW2019_RESULTS_ROOT:-results/beliefmove-evo-www2019}"
 SEEDS="${RQ_SEEDS:-42 43 44}"; DEVICE="${DEVICE:-auto}"; BATCH_SIZE="${BATCH_SIZE:-128}"
 LIMIT="${LLM_LIMIT:-200}"; MODEL="${OLLAMA_MODEL:-qwen2:7b}"; SLUG="${MODEL//[:\/]/-}"
+ITERATIONS="${SIGNIFICANCE_ITERATIONS:-10000}"
 HYBRID="results/www2019-hybrid/$SLUG/limit-$LIMIT/no-osm/Shanghai"
 export CITY DATA_BASE="$BASE" BELIEFMOVE_OUT="$RESULTS" DATASET_LABEL="WWW2019-Shanghai-ISP"
 
@@ -102,13 +103,15 @@ status(){
   need_python
   "$PY" -m hybrid.www2019_summary --root "$RESULTS/artifacts/full/Shanghai" \
     --hybrid-metrics "$HYBRID/full/metrics.json" --seeds $SEEDS \
-    --output "$RESULTS/aggregated/www2019_summary.json" --markdown ../../ideas/results_www2019.md --allow-incomplete
+    --iterations "$ITERATIONS" --output "$RESULTS/aggregated/www2019_summary.json" \
+    --markdown ../../ideas/results_www2019.md --allow-incomplete
 }
 aggregate(){
   need_python
   "$PY" -m hybrid.www2019_summary --root "$RESULTS/artifacts/full/Shanghai" \
     --hybrid-metrics "$HYBRID/full/metrics.json" --seeds $SEEDS \
-    --output "$RESULTS/aggregated/www2019_summary.json" --markdown ../../ideas/results_www2019.md
+    --iterations "$ITERATIONS" --output "$RESULTS/aggregated/www2019_summary.json" \
+    --markdown ../../ideas/results_www2019.md
 }
 
 case "$ACTION" in

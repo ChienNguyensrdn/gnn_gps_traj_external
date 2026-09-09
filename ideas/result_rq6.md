@@ -8,6 +8,21 @@ RQ6 kiểm tra:
 
 > Tiến hóa biểu diễn theo chiều layer hay theo chiều thời gian quan trọng hơn, và việc kết hợp hai trục có mang lại lợi ích bổ sung hay không?
 
+### Mục tiêu
+
+Phân tách layer evolution và temporal evolution, liên hệ representation metrics
+(CKA/cosine) với ranking, calibration và độ dài trajectory, từ đó xác định liệu
+dual-axis có tạo lợi ích bổ sung.
+
+### Tiêu chí đạt
+
+- E1, E2, E3, E4, E6 và E5 dùng cùng split, candidate set và seed 42–44.
+- Alignment và ngưỡng trajectory length chỉ fit trên validation rồi khóa cho test.
+- Claim dual-axis tốt hơn cần E5 vượt các đối chứng tương ứng bằng paired test
+  sau Holm; representation similarity cao đơn độc không đủ chứng minh quality gain.
+- RQ đạt về mặt thực nghiệm khi đủ ranking, calibration, representation và
+  length-stratified analysis, kể cả khi khác biệt giữa các evolution variant không significant.
+
 Các cấu hình:
 
 | Variant | Thành phần |

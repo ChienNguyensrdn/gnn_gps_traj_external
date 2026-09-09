@@ -10,6 +10,20 @@ RQ10 kiểm tra liệu lợi ích của distillation có phụ thuộc vào mộ
 - `gru`: student nhận knowledge distillation và các tín hiệu biểu diễn từ GRU teacher.
 - `transformer`: cùng student đó nhận các tín hiệu tương ứng từ Transformer teacher.
 
+### Mục tiêu
+
+Đánh giá tính bền vững của distillation trước thay đổi kiến trúc teacher và xác
+định teacher nào tạo student cân bằng nhất giữa ranking và calibration.
+
+### Tiêu chí đạt
+
+- Chỉ thay teacher; student architecture, split, candidates và seed phải giữ nguyên.
+- Mỗi distilled student phải được paired với CE-only trên cùng query/seed.
+- Robustness được hỗ trợ nếu cả GRU- và Transformer-distilled student đều vượt
+  CE-only có ý nghĩa trên các metric ranking chính.
+- Không được kết luận teacher này tốt hơn teacher kia nếu paired difference sau
+  Holm không significant; calibration phải được xem cùng ranking.
+
 ## Chất lượng teacher trên test
 
 | Kiến trúc | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
@@ -75,11 +89,24 @@ Không được diễn giải kết quả không significant giữa hai student 
 ## Phạm vi và hạn chế
 
 - Kết luận hiện chỉ áp dụng cho GRU và Transformer, trên TIST2015–Tokyo với seed 42–44.
-- Đây không phải kết quả đa thành phố và không được suy diễn thành kết quả 12-city.
+- Phân tích paired chi tiết phía trên là của Tokyo; macro 12-city được báo cáo riêng bên dưới.
 - PMT/UniTraj chưa được đưa vào bảng vì adapter preprocessing và candidate space chưa được xác minh.
 - Báo cáo hiện chưa trình bày mean ± std theo seed, số tham số, epoch checkpoint được chọn và chi phí huấn luyện; nên bổ sung các thông tin này nếu dùng trong bản thảo chính.
 - Hai teacher dùng cùng chiều biểu diễn nhưng không nhất thiết có cùng số tham số; vì vậy đây là kiểm tra robustness theo kiến trúc, không phải so sánh capacity-matched tuyệt đối.
 
 ## Publication gate
 
-RQ10 đạt gate nội bộ cho thí nghiệm Tokyo: đủ checkpoint, test metrics và per-query predictions của seed 42–44, đồng thời paired significance đã áp dụng Holm correction. Gate cho tuyên bố đa kiến trúc rộng hoặc đa thành phố vẫn chưa hoàn thành.
+RQ10 đạt gate nội bộ cho Tokyo và đủ artifact macro 12-city. Tuyên bố vẫn chỉ
+bao phủ hai teacher GRU/Transformer, không phải mọi kiến trúc teacher.
+
+## Kết quả mở rộng TIST2015 — 12 thành phố
+
+| Student | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| none | 0,155951 ± 0,003059 | 0,304878 ± 0,001382 | 0,353451 ± 0,003475 | 0,225894 ± 0,001212 | 7,434454 | 0,945238 | 0,055881 |
+| gru | 0,170549 ± 0,001154 | 0,325773 ± 0,002365 | 0,381963 ± 0,003815 | 0,244327 ± 0,000560 | 6,647197 | 0,934168 | 0,045113 |
+| transformer | 0,167144 ± 0,002947 | 0,325721 ± 0,000215 | 0,379618 ± 0,000604 | 0,242336 ± 0,001888 | 6,703186 | 0,937478 | 0,046834 |
+
+Cả hai teacher đều tạo student tốt hơn `none`; student distill từ GRU đứng đầu
+mọi metric macro trong bảng. Chưa có paired significance đa thành phố, nên đây
+là bằng chứng mô tả bổ sung cho paired result Tokyo.

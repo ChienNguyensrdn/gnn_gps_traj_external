@@ -6,12 +6,55 @@ from pathlib import Path
 
 import numpy as np
 
+from .paired_order_test import (METRICS, bootstrap_and_permutation_many,
+                                holm_adjust, load_npz, paired_differences)
+
 
 METRICS = ("recall@1", "recall@5", "recall@10", "mrr", "nll", "brier", "ece")
+PAIRED_METRICS = tuple(metric for metric in METRICS if metric != "ece")
+PAIRED_COMPARISONS = (
+    ("E1-kd-vs-E0-ce", "E1-kd", "correct", "E0-ce", "correct"),
+    ("E5-dual-vs-E1-kd", "E5-dual", "correct", "E1-kd", "correct"),
+    ("correct-vs-reverse", "E5-dual", "correct", "E5-dual", "reverse"),
+    ("correct-vs-random", "E5-dual", "correct", "E5-dual", "random"),
+)
 
 
 def read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def prediction_path(root: Path, variant: str, order: str, seed: int) -> Path:
+    return root / variant / order / f"seed-{seed}" / "test.predictions.npz"
+
+
+def paired_summary(root: Path, seeds: list[int], iterations: int,
+                   random_seed: int = 42) -> list[dict]:
+    rows: list[dict] = []
+    for comparison_index, (name, left_variant, left_order, right_variant, right_order) in enumerate(PAIRED_COMPARISONS):
+        differences = []
+        for seed in seeds:
+            left = load_npz(prediction_path(root, left_variant, left_order, seed))
+            right = load_npz(prediction_path(root, right_variant, right_order, seed))
+            differences.append(np.column_stack([
+                paired_differences(left, right, metric) for metric in PAIRED_METRICS
+            ]))
+        effects, intervals, p_values = bootstrap_and_permutation_many(
+            differences, iterations, random_seed + comparison_index
+        )
+        for metric_index, metric in enumerate(PAIRED_METRICS):
+            rows.append({
+                "comparison": name,
+                "metric": metric,
+                "effect_favoring_first": float(effects[metric_index]),
+                "bootstrap_ci95": intervals[metric_index].tolist(),
+                "permutation_p": float(p_values[metric_index]),
+            })
+    adjusted = holm_adjust([row["permutation_p"] for row in rows])
+    for row, value in zip(rows, adjusted):
+        row["holm_adjusted_p"] = value
+        row["significant_at_0.05"] = value < 0.05
+    return rows
 
 
 def main() -> None:
@@ -22,7 +65,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument("--iterations", type=int, default=10000)
+    parser.add_argument("--random-seed", type=int, default=42)
     args = parser.parse_args()
+    if args.iterations < 1000:
+        parser.error("--iterations must be at least 1000")
 
     variants = ("E0-ce", "E1-kd", "E5-dual")
     missing: list[str] = []
@@ -58,6 +105,18 @@ def main() -> None:
                                 for metric, values in metrics.items()}
                       for variant, metrics in belief.items()}
 
+    paired_missing = sorted({
+        str(prediction_path(args.root, variant, order, seed))
+        for _, left_variant, left_order, right_variant, right_order in PAIRED_COMPARISONS
+        for variant, order in ((left_variant, left_order), (right_variant, right_order))
+        for seed in args.seeds
+        if not prediction_path(args.root, variant, order, seed).is_file()
+    })
+    missing.extend(paired_missing)
+    paired_tests = [] if paired_missing else paired_summary(
+        args.root, args.seeds, args.iterations, args.random_seed
+    )
+
     hybrid = None
     if args.hybrid_metrics:
         if args.hybrid_metrics.is_file(): hybrid = read(args.hybrid_metrics)
@@ -65,7 +124,8 @@ def main() -> None:
     gate = "ready-www2019" if not missing else "incomplete"
     result = {"dataset": "WWW2019-Shanghai-ISP", "protocol": "cross-dataset confirmation",
               "seeds": args.seeds, "neural": rows, "belief": belief_summary,
-              "llm_bounded": hybrid, "missing": sorted(set(missing)), "gate": gate}
+              "llm_bounded": hybrid, "paired_tests": paired_tests,
+              "missing": sorted(set(missing)), "gate": gate}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
@@ -82,6 +142,18 @@ def main() -> None:
     for variant in ("B0-static", "B3-dbn"):
         row = belief_summary.get(variant, {})
         lines.append(f"| {variant} | {fmt(row.get('recall@1'))} | {fmt(row.get('recall@5'))} | {fmt(row.get('recall@10'))} | {fmt(row.get('mrr'))} |")
+    if paired_tests:
+        lines += ["", "## Paired significance", "",
+                  "> Positive effect nghĩa là variant đứng trước tốt hơn; NLL/Brier đã đảo dấu. Holm correction áp dụng chung.", "",
+                  "| Comparison | Metric | Effect | 95% CI | Holm p | Significant |",
+                  "|---|---|---:|---:|---:|---|"]
+        for row in paired_tests:
+            low, high = row["bootstrap_ci95"]
+            lines.append(
+                f"| {row['comparison']} | {row['metric']} | {row['effect_favoring_first']:.6f} | "
+                f"{low:.6f}–{high:.6f} | {row['holm_adjusted_p']:.6g} | "
+                f"{'yes' if row['significant_at_0.05'] else 'no'} |"
+            )
     lines += ["", "## Giới hạn", "", "- WWW2019 là Shanghai-ISP, không phải thí nghiệm 12 thành phố.",
               "- Neural last-query và Bayesian all-prefix được báo cáo riêng.",
               "- LLM bounded không được gọi là full-query."]

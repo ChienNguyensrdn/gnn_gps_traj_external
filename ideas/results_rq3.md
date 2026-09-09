@@ -13,6 +13,21 @@ RQ3 kiểm tra structured mobility beliefs từ LLM có giúp Bayesian student t
 
 Các nguồn được kết hợp bằng log-linear fusion. Trọng số được chọn theo `R@1 + R@10` trên validation; test không tham gia lựa chọn.
 
+### Mục tiêu
+
+Tách incremental utility của structured LLM knowledge khỏi quantitative teacher:
+LLM có ích độc lập hay chỉ lặp lại tín hiệu đã có trong mô hình định lượng.
+
+### Tiêu chí đạt
+
+- Cache LLM phải bất biến, phủ đủ query và không gọi lại LLM trong evaluation.
+- Fusion weight chỉ chọn trên validation; test chỉ dùng báo cáo cuối.
+- Để khẳng định LLM có giá trị bổ sung, M2 phải vượt M1 hoặc M4 phải vượt M3
+  trên paired test sau Holm correction, ưu tiên Recall/MRR mà không làm suy giảm
+  calibration nghiêm trọng.
+- Nếu không đạt khác biệt có ý nghĩa, RQ vẫn hoàn thành nhưng kết luận phải là
+  chưa xác nhận incremental utility; bounded result không được suy diễn thành full-query.
+
 ## 2. Kết quả test
 
 | Variant | q-weight | LLM-weight | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
@@ -103,4 +118,17 @@ M1 có ECE thấp nhất (0,021684), trong khi M3 và M4 cải thiện mạnh ra
 - Các variant deterministic chỉ có một paired run, không pseudo-replicate theo seed.
 - Cỡ mẫu chỉ 200 test query khiến power thấp sau Holm correction 30 phép kiểm định.
 - Đây là frozen belief-fusion ablation, chưa phải end-to-end neural student distillation.
-- Kết quả chỉ áp dụng cho Tokyo, Qwen2:7b, limit 200 và `no-OSM`; không được gọi là full-query, full-world-knowledge hoặc 12-city result.
+- Phân tích paired chi tiết phía trên áp dụng cho Tokyo; macro 12-city bounded được báo cáo riêng bên dưới.
+
+## 7. Kết quả mở rộng TIST2015 — 12 thành phố (bounded)
+
+| Variant | R@1 | R@5 | R@10 | MRR | NLL↓ |
+|---|---:|---:|---:|---:|---:|
+| M1-data-only | 0,022079 | 0,059487 | 0,084025 | 0,045216 | 8,402382 |
+| M2-llm | 0,032912 | 0,071571 | 0,094441 | 0,056014 | 8,371884 |
+| M3-quantitative | 0,135096 | 0,271209 | 0,320330 | 0,201125 | 6,799041 |
+| M4-both | 0,135929 | 0,271209 | 0,324913 | 0,202728 | 6,783468 |
+
+M4 có macro R@1, R@10, MRR và NLL tốt nhất, nhưng chênh lệch M4–M3 nhỏ.
+Đây là Qwen2:7b, `limit=200`, `no-OSM`; gate **ready-bounded-12-city**,
+không phải full-query hay paired significance đa thành phố.

@@ -12,6 +12,23 @@ RQ2 kiểm tra mức chất lượng có thể đạt được khi suy luận v�
 - `dbn-data-only`: BN data-only có thêm first-order transition prior.
 - `quantitative-teacher`: GRU teacher định lượng, chạy với seed 42, 43 và 44.
 
+### Mục tiêu
+
+Định lượng mức đóng góp tối đa của prior user/time và transition khi không có
+LLM/OSM, đồng thời xác định liệu DBN có thực sự tốt hơn BN tĩnh và còn cách
+teacher học sâu bao xa.
+
+### Tiêu chí đạt
+
+- Prior và transition chỉ fit trên train; test không tham gia tuning.
+- DBN phải vượt BN trên Recall/MRR bằng paired test sau Holm correction để kết
+  luận transition có ích.
+- Quantitative teacher phải được so trên đúng query/candidate space với các
+  baseline data-only.
+- Negative result vẫn đạt yêu cầu nghiên cứu nếu protocol hợp lệ và được báo
+  cáo; “đạt” ở đây là trả lời được đóng góp của từng nguồn dữ liệu, không phải
+  bắt buộc DBN thắng teacher.
+
 ## 2. Kết quả test
 
 | Variant | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
@@ -104,5 +121,16 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 - Teacher dùng seed 42–44; baseline deterministic chỉ tính một run.
 - Paired tests dùng cùng test query; Holm correction áp dụng chung cho toàn bộ 30 phép kiểm định.
 - Đây là categorical POI data-only experiment, không dùng LLM hoặc OSM.
-- Kết luận hiện chỉ áp dụng cho TIST2015–Tokyo; chưa phải kết quả 12-city.
+- Phân tích paired chi tiết phía trên áp dụng cho Tokyo; macro 12-city được báo cáo riêng bên dưới.
 - DBN-vs-BN dùng một deterministic paired run; không pseudo-replicate theo ba teacher seed.
+
+## 7. Kết quả mở rộng TIST2015 — 12 thành phố
+
+| Variant | R@1 | R@5 | R@10 | MRR | NLL↓ | Brier↓ | ECE↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dbn-data-only | 0,154823 | 0,298252 | 0,358989 | 0,224754 | 8,491321 | 0,999051 | 0,153880 |
+| quantitative-teacher | 0,171751 ± 0,002154 | 0,324055 ± 0,002071 | 0,377889 ± 0,001171 | 0,244027 ± 0,002008 | 7,093902 ± 0,097125 | 0,938170 ± 0,003423 | 0,056555 ± 0,007519 |
+
+Teacher tiếp tục vượt DBN trên các metric ranking và calibration ở mức macro.
+Snapshot 12-city đủ artifact bắt buộc, nhưng chưa có paired significance đa
+thành phố; DBN deterministic chỉ được tính một lần, không pseudo-replicate.
