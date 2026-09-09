@@ -673,8 +673,9 @@ Action `download` tải archive trực tiếp từ repository AgentMove upstream
 `poi.txt` vào `data/dataset_www2019/`. Nếu server đã có archive tải thủ công,
 đặt đúng tại đường dẫn trên rồi chạy lại action `download`.
 
-`smoke` ghi vào scope `smoke`, không được đưa vào báo cáo chính. Báo cáo cuối nằm ở
-`ideas/results_www2019.md`; JSON máy đọc nằm ở
+`smoke` ghi vào scope `smoke`, không được đưa vào báo cáo chính. Báo cáo phân tích
+nằm ở `ideas/results_www2019.md`; bảng sinh tự động được ghi vào
+`ideas/results_www2019_generated.md` để không ghi đè phân tích. JSON máy đọc nằm ở
 `src/AgentMove/results/beliefmove-evo-www2019/aggregated/www2019_summary.json`.
 Lệnh `aggregate` thực hiện paired bootstrap/sign-flip cho `E1–E0`, `E5–E1`,
 `correct–reverse` và `correct–random`, sau đó áp dụng Holm correction chung.

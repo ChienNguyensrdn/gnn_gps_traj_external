@@ -104,14 +104,14 @@ status(){
   "$PY" -m hybrid.www2019_summary --root "$RESULTS/artifacts/full/Shanghai" \
     --hybrid-metrics "$HYBRID/full/metrics.json" --seeds $SEEDS \
     --iterations "$ITERATIONS" --output "$RESULTS/aggregated/www2019_summary.json" \
-    --markdown ../../ideas/results_www2019.md --allow-incomplete
+    --markdown ../../ideas/results_www2019_generated.md --allow-incomplete
 }
 aggregate(){
   need_python
   "$PY" -m hybrid.www2019_summary --root "$RESULTS/artifacts/full/Shanghai" \
     --hybrid-metrics "$HYBRID/full/metrics.json" --seeds $SEEDS \
     --iterations "$ITERATIONS" --output "$RESULTS/aggregated/www2019_summary.json" \
-    --markdown ../../ideas/results_www2019.md
+    --markdown ../../ideas/results_www2019_generated.md
 }
 
 case "$ACTION" in
