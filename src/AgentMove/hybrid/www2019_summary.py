@@ -31,9 +31,9 @@ def prediction_path(root: Path, variant: str, order: str, seed: int) -> Path:
 
 
 def paired_summary(root: Path, seeds: list[int], iterations: int,
-                   random_seed: int = 42) -> list[dict]:
+                   random_seed: int = 42, comparisons=PAIRED_COMPARISONS) -> list[dict]:
     rows: list[dict] = []
-    for comparison_index, (name, left_variant, left_order, right_variant, right_order) in enumerate(PAIRED_COMPARISONS):
+    for comparison_index, (name, left_variant, left_order, right_variant, right_order) in enumerate(comparisons):
         differences = []
         for seed in seeds:
             left = load_npz(prediction_path(root, left_variant, left_order, seed))
@@ -71,6 +71,8 @@ def main() -> None:
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--dataset-label", default="WWW2019-Shanghai-ISP")
     parser.add_argument("--report-title", default="WWW2019 — Cross-dataset validation")
+    parser.add_argument("--frozen-only", action="store_true",
+                        help="omit retrained reverse/random comparisons and require only frozen controls")
     args = parser.parse_args()
     if args.iterations < 1000:
         parser.error("--iterations must be at least 1000")
@@ -110,16 +112,22 @@ def main() -> None:
                                 for metric, values in metrics.items()}
                       for variant, metrics in belief.items()}
 
+    comparisons = PAIRED_COMPARISONS
+    if args.frozen_only:
+        comparisons = tuple(row for row in comparisons if row[0] in {
+            "E1-kd-vs-E0-ce", "E5-dual-vs-E1-kd",
+            "frozen-correct-vs-reverse", "frozen-correct-vs-random",
+        })
     paired_missing = sorted({
         str(prediction_path(args.root, variant, order, seed))
-        for _, left_variant, left_order, right_variant, right_order in PAIRED_COMPARISONS
+        for _, left_variant, left_order, right_variant, right_order in comparisons
         for variant, order in ((left_variant, left_order), (right_variant, right_order))
         for seed in args.seeds
         if not prediction_path(args.root, variant, order, seed).is_file()
     })
     missing.extend(paired_missing)
     paired_tests = [] if paired_missing else paired_summary(
-        args.root, args.seeds, args.iterations, args.random_seed
+        args.root, args.seeds, args.iterations, args.random_seed, comparisons
     )
 
     hybrid = None

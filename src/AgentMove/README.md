@@ -173,6 +173,47 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/yjmob100k_pipeline.sh llm-bounded
 
 Set `YJMOB_DATASET=2` to study the normal-to-emergency shift separately. Do not merge Dataset 1 and Dataset 2 because they answer different questions. `YJMOB_KEEP_STAYS=1` retains consecutive same-cell observations; the default removes them to avoid a trivial stay-prediction task.
 
+### Publication-core experiments on three datasets
+
+The publication pipeline keeps only the supported claims: CE/KD/Dual quality,
+frozen temporal-order control, and static-versus-DBN belief. It intentionally
+excludes the bounded LLM distillation, uncertainty-routing and semantic
+corruption experiments (RQ3/RQ8/RQ9).
+
+```bash
+# Audit and prepare TIST2015 (12 cities), WWW2019-Shanghai and YJMob100K.
+./scripts/publication_core_3datasets.sh audit
+DEVICE=cuda BATCH_SIZE=128 ./scripts/publication_core_3datasets.sh prepare
+
+# Main three-model confirmation: E0-CE, E1-KD and E5-Dual.
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
+  ./scripts/publication_core_3datasets.sh neural
+
+# Evaluate the same frozen E5 checkpoint on correct/reverse/random inputs.
+RQ_SEEDS="42 43 44" DEVICE=cuda \
+  ./scripts/publication_core_3datasets.sh temporal
+
+# Compare B0-static and B3-DBN using all-prefix evaluation.
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
+  ./scripts/publication_core_3datasets.sh belief
+
+# Strict per-dataset/city reports and paired tests.
+./scripts/publication_core_3datasets.sh status
+SIGNIFICANCE_ITERATIONS=10000 ./scripts/publication_core_3datasets.sh aggregate
+```
+
+Set `FULL_ABLATION=1` for E2/E3/E4/E6 in addition to E0/E1/E5. Teacher
+architecture robustness and objective-specific calibration are optional stages
+that require the main checkpoints first:
+
+```bash
+./scripts/publication_core_3datasets.sh teacher-robustness
+./scripts/publication_core_3datasets.sh calibration
+```
+
+Run datasets separately with `CORE_DATASETS=tist2015`, `www2019`, or
+`yjmob100k`. Rerunning any action resumes from existing checkpoints and metrics.
+
 # 🔧 Debugging Tips
 1. If you encounter any exceptions, you can try relaxing the try-except control in the code to help with debugging.
 2. You can refer to the `launch.json` file in the `.vscode` directory to enable remote debugging.

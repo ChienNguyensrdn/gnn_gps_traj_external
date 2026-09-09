@@ -3,8 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ACTION="${1:-audit}"; PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"; CITY="${CITY:-Tokyo}"
-SEED="${SEED:-42}"; TEACHER="${TEACHER:-gru}"; BASE="data/hybrid/TIST2015/$CITY"
-ROOT="results/beliefmove-evo/artifacts/full/$CITY/rq10"
+SEED="${SEED:-42}"; TEACHER="${TEACHER:-gru}"; BASE="${DATA_BASE:-data/hybrid/TIST2015/$CITY}"
+OUT="${BELIEFMOVE_OUT:-results/beliefmove-evo}"
+ROOT="$OUT/artifacts/full/$CITY/rq10"
 
 require_file() { [[ -f "$1" ]] || { echo "Missing required file: $1" >&2; exit 2; }; }
 audit() {
@@ -110,7 +111,7 @@ aggregate() {
   status || { echo "Aggregation stopped; incomplete runs must not be reported as complete RQ10." >&2; exit 2; }
   "$PYTHON_BIN" -m hybrid.rq10_aggregate --root "$ROOT" --seeds ${RQ10_SEEDS:-42 43 44} \
     --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
-    --output results/beliefmove-evo/aggregated/rq10_summary.json --markdown ../../ideas/results_rq10.md
+    --output "$OUT/aggregated/rq10_summary.json" --markdown "${RQ10_MARKDOWN:-../../ideas/results_rq10.md}"
 }
 case "$ACTION" in
   audit) audit ;; train-teacher) train_teacher ;; train-student) train_student ;; evaluate) evaluate ;;
