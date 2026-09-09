@@ -668,6 +668,11 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/www2019_pipeline.sh llm-bounded
 SIGNIFICANCE_ITERATIONS=10000 ./scripts/www2019_pipeline.sh aggregate
 ```
 
+Action `download` tải archive trực tiếp từ repository AgentMove upstream vào
+`data/www2019_isp_data.zip`, kiểm tra CRC và giải nén các file `isp`, `weibo`,
+`poi.txt` vào `data/dataset_www2019/`. Nếu server đã có archive tải thủ công,
+đặt đúng tại đường dẫn trên rồi chạy lại action `download`.
+
 `smoke` ghi vào scope `smoke`, không được đưa vào báo cáo chính. Báo cáo cuối nằm ở
 `ideas/results_www2019.md`; JSON máy đọc nằm ở
 `src/AgentMove/results/beliefmove-evo-www2019/aggregated/www2019_summary.json`.

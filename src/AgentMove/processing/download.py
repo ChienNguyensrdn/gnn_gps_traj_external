@@ -60,7 +60,6 @@ def download_data(data_name="www19", use_proxy=True):
         You can also directly download the dataset from the URL and place it in the current directory
         :return: None
     """
-    import gdown
     import requests
     from config import WWW2019_DATA_DIR, TIST2015_DATA_DIR, TSMC2014_DATA_DIR, GOWALLA_DATA_DIR, PROXY, DATA_PATH
 
@@ -68,7 +67,7 @@ def download_data(data_name="www19", use_proxy=True):
         "tsmc2014": 'http://www-public.tem-tsp.eu/~zhang_da/pub/dataset_tsmc2014.zip',
         # 'https://drive.google.com/file/d/0BwrgZ-IdrTotZ0U0ZER2ejI3VVk/view'
         "tist2015": 'https://github.com/tsinghua-fib-lab/AgentMove/releases/download/dataset_tist2015/dataset_tist2015.zip',
-        "www2019": 'https://github.com/tsinghua-fib-lab/AgentMove/blob/main/data/www2019_isp_data.zip',
+        "www2019": 'https://github.com/tsinghua-fib-lab/AgentMove/raw/refs/heads/main/data/www2019_isp_data.zip',
         "gowalla": 'https://snap.stanford.edu/data/loc-gowalla_totalCheckins.txt.gz'
     }
     dataset_url = dataset_urls_dict[data_name]
@@ -139,32 +138,53 @@ def download_data(data_name="www19", use_proxy=True):
         print('Removal complete!')
 
     elif data_name=="www2019" and not os.path.exists(os.path.join(WWW2019_DATA_DIR, "isp")):
-        ## we have uploaded data, no need to download dataset
-        # if not os.path.exists(os.path.join(DATA_PATH, "www2019_isp_data.zip")):
-        #     if use_proxy:
-        #         os.environ["http_proxy"] = PROXY
-        #         os.environ["https_proxy"] = PROXY
-        #     r = requests.get(dataset_url, stream=True, timeout=180)
-        #     file_size = int(r.headers.get('content-length', 0))
-        #     with tqdm(total=file_size, unit='B', unit_scale=True, unit_divisor=1024) as progress_bar:
-        #         with open(os.path.join(DATA_PATH, "www2019_isp_data.zip"), 'wb') as f:
-        #             for chunk in r.iter_content(chunk_size=1024):
-        #                 f.write(chunk)
-        #                 progress_bar.update(len(chunk)) 
-        #     print('Download complete!')
+        archive = Path(DATA_PATH) / "www2019_isp_data.zip"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        if not archive.is_file():
+            print(f'Downloading WWW2019 archive to {archive}...')
+            with requests.get(dataset_url, stream=True, timeout=180) as response:
+                response.raise_for_status()
+                total = int(response.headers.get('content-length', 0)) or None
+                with archive.open('wb') as handle, _progress_bar(
+                    total=total, unit='B', unit_scale=True, unit_divisor=1024
+                ) as progress_bar:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            handle.write(chunk)
+                            progress_bar.update(len(chunk))
+            print('Download complete!')
+        else:
+            print(f'Using existing WWW2019 archive: {archive}')
 
-        print('Extracting the zip folder...')
-        os.system('unzip {} -d {}/'.format(os.path.join(DATA_PATH, "www2019_isp_data.zip"), WWW2019_DATA_DIR))
+        destination = Path(WWW2019_DATA_DIR)
+        destination.mkdir(parents=True, exist_ok=True)
+        print('Extracting the WWW2019 archive...')
+        with zipfile.ZipFile(archive) as bundle:
+            corrupt_member = bundle.testzip()
+            if corrupt_member:
+                raise zipfile.BadZipFile(
+                    f"CRC failure in {corrupt_member}; remove {archive} and retry"
+                )
+            bundle.extractall(destination)
+        for nested_name in ("isp.zip", "poi.txt.zip"):
+            nested = destination / nested_name
+            if not nested.is_file():
+                raise FileNotFoundError(
+                    f"WWW2019 archive does not contain expected file: {nested_name}"
+                )
+            with zipfile.ZipFile(nested) as bundle:
+                corrupt_member = bundle.testzip()
+                if corrupt_member:
+                    raise zipfile.BadZipFile(f"CRC failure in {nested_name}:{corrupt_member}")
+                bundle.extractall(destination)
+            nested.unlink()
+        required_www2019 = (destination / "isp", destination / "weibo", destination / "poi.txt")
+        missing_www2019 = [str(path) for path in required_www2019 if not path.is_file()]
+        if missing_www2019:
+            raise FileNotFoundError(
+                "WWW2019 extraction incomplete; missing: " + ", ".join(missing_www2019)
+            )
         print('Extraction complete!')
-
-        os.system('unzip {}/isp.zip -d {}/'.format(WWW2019_DATA_DIR, WWW2019_DATA_DIR))
-        os.system('unzip {}/poi.txt.zip -d {}/'.format(WWW2019_DATA_DIR, WWW2019_DATA_DIR))
-        os.system('rm {}/isp.zip'.format(WWW2019_DATA_DIR))
-        os.system('rm {}/poi.txt.zip'.format(WWW2019_DATA_DIR))
-
-        # print('Removing the zip folder...')
-        # os.system('rm {}'.format(os.path.join(DATA_PATH, "www2019_isp_data.zip")))
-        # print('Removal complete!')
 
     elif data_name=="gowalla" and not os.path.exists(os.path.join(GOWALLA_DATA_DIR, "gowalla_totalCheckins.txt")):
         r = requests.get(dataset_url)
