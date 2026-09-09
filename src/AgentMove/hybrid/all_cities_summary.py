@@ -155,19 +155,33 @@ def summarize_seeds(macro):
                    for metric,values in metrics.items()} for label,metrics in grouped.items()}
 
 
+def partition_missing(missing, allow_gpu_contention=False):
+    accepted = {}
+    blocking = {}
+    for city, items in missing.items():
+        accepted[city] = [item for item in items
+                          if allow_gpu_contention and item.startswith("GPU_CONTENTION:")]
+        blocking[city] = [item for item in items if item not in accepted[city]]
+    return blocking, accepted
+
+
 def render(payload):
     lines=["# TIST2015 — Tổng hợp thực nghiệm 12 thành phố","",
            f"> Scope: `{payload['scope']}`. Gate: **{payload['gate']}**.","",
-           "## Trạng thái thành phố","","| City | Rows ready | Missing artifacts |","|---|---:|---:|"]
+           "## Trạng thái thành phố","","| City | Rows ready | Blocking missing | Accepted contention |","|---|---:|---:|---:|"]
     for city in payload["cities"]:
-        lines.append(f"| {city} | {len(payload['per_city'][city])} | {len(payload['missing'][city])} |")
+        lines.append(f"| {city} | {len(payload['per_city'][city])} | {len(payload['blocking_missing'][city])} | {len(payload['accepted_gpu_contention'][city])} |")
     lines += ["","## Macro metrics qua city và seed","","| Experiment | Metric | Macro mean ± seed std | Mean city variance | Runs |","|---|---|---:|---:|---:|"]
     for label,row in payload["macro_seed_summary"].items():
         for metric,value in row.items():
             mean=f"{value['mean']:.6f}"; std=value["std"]
             if std is not None: mean += f" ± {std:.6f}"
             lines.append(f"| {label} | {metric} | {mean} | {value['city_population_variance_mean']:.6g} | {value['runs']} |")
-    if payload["gate"] != "ready-12city":
+    if payload["gate"] == "ready-internal-gpu-contention":
+        lines += ["","## Internal-only gate","",
+                  "Đủ artifact để tổng hợp nội bộ, nhưng RQ12 được đo khi GPU có foreign process. "
+                  "Không dùng latency/throughput này làm benchmark publication.",""]
+    elif payload["gate"] != "ready-12city":
         lines += ["","## Publication gate","",
                   "Không được gọi đây là 12-city average: còn artifact thiếu hoặc scope chưa đồng nhất.",""]
     return "\n".join(lines)
@@ -180,19 +194,29 @@ def main():
     parser.add_argument("--random-seeds",nargs="+",type=int,default=list(range(42,92)))
     parser.add_argument("--limit",type=int,default=200); parser.add_argument("--scope",choices=["all","neural","bayesian","efficiency","llm"],default="all")
     parser.add_argument("--output",type=Path,required=True); parser.add_argument("--markdown",type=Path,required=True)
-    parser.add_argument("--allow-incomplete",action="store_true"); args=parser.parse_args()
+    parser.add_argument("--allow-incomplete",action="store_true")
+    parser.add_argument("--allow-gpu-contention",action="store_true",
+                        help="Accept only GPU_CONTENTION markers for an internal, non-publication report")
+    args=parser.parse_args()
     city_rows={}; missing={}
     for city in args.cities:
         city_rows[city],missing[city]=collect_city(args.results_root,city,args.seeds,args.random_seeds,args.model_slug,args.limit,args.scope)
     macro=aggregate(args.cities,city_rows)
-    complete=all(not missing[city] for city in args.cities) and tuple(args.cities)==CANONICAL_CITIES
+    blocking,accepted=partition_missing(missing,args.allow_gpu_contention)
+    complete=all(not blocking[city] for city in args.cities) and tuple(args.cities)==CANONICAL_CITIES
+    has_accepted_contention=any(accepted[city] for city in args.cities)
+    gate=("ready-internal-gpu-contention" if complete and has_accepted_contention else
+          "ready-12city" if complete else "incomplete")
     payload={"rq":"RQ1-RQ13","scope":args.scope,"cities":args.cities,"seeds":args.seeds,"model_slug":args.model_slug,
              "limit":args.limit,"llm_world_mode":"no-OSM","per_city":city_rows,"missing":missing,"macro":macro,
-             "macro_seed_summary":summarize_seeds(macro),
-             "gate":"ready-12city" if complete else "incomplete"}
+             "blocking_missing":blocking,"accepted_gpu_contention":accepted,
+             "macro_seed_summary":summarize_seeds(macro),"gate":gate,
+             "publication_eligible":gate == "ready-12city"}
     args.output.parent.mkdir(parents=True,exist_ok=True); args.output.write_text(json.dumps(payload,indent=2)+"\n")
     args.markdown.parent.mkdir(parents=True,exist_ok=True); args.markdown.write_text(render(payload))
-    print(json.dumps({"output":str(args.output),"gate":payload["gate"],"missing":sum(map(len,missing.values()))}))
+    print(json.dumps({"output":str(args.output),"gate":payload["gate"],
+                      "blocking_missing":sum(map(len,blocking.values())),
+                      "accepted_gpu_contention":sum(map(len,accepted.values()))}))
     if not complete and not args.allow_incomplete: raise SystemExit(2)
 
 
