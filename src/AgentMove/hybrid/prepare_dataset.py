@@ -56,7 +56,7 @@ def normalize_input(path: str | Path, city: str) -> pd.DataFrame:
 
 def assign_trajectories(frame: pd.DataFrame, dataset: str, window_hours: int) -> pd.DataFrame:
     result = frame.copy()
-    if dataset == "isp" and "traj_id" in result.columns:
+    if dataset in {"isp", "yjmob100k"} and "traj_id" in result.columns:
         result["trajectory_id"] = result["user_id"] + "_" + result["traj_id"].astype(str)
         return result
     trajectory_ids: List[str] = [""] * len(result)
@@ -259,7 +259,7 @@ def prepare(args: argparse.Namespace) -> Dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare ISP-Shanghai or TIST2015 for hybrid experiments")
-    parser.add_argument("--dataset", required=True, choices=["isp", "tist2015"])
+    parser.add_argument("--dataset", required=True, choices=["isp", "tist2015", "yjmob100k"])
     parser.add_argument("--input", required=True, help="Normalized city CSV from AgentMove preprocessing")
     parser.add_argument("--city", required=True)
     parser.add_argument("--output-dir", required=True)

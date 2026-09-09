@@ -69,6 +69,8 @@ def main() -> None:
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--iterations", type=int, default=10000)
     parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--dataset-label", default="WWW2019-Shanghai-ISP")
+    parser.add_argument("--report-title", default="WWW2019 — Cross-dataset validation")
     args = parser.parse_args()
     if args.iterations < 1000:
         parser.error("--iterations must be at least 1000")
@@ -125,14 +127,14 @@ def main() -> None:
         if args.hybrid_metrics.is_file(): hybrid = read(args.hybrid_metrics)
         else: missing.append(str(args.hybrid_metrics))
     gate = "ready-www2019" if not missing else "incomplete"
-    result = {"dataset": "WWW2019-Shanghai-ISP", "protocol": "cross-dataset confirmation",
+    result = {"dataset": args.dataset_label, "protocol": "cross-dataset confirmation",
               "seeds": args.seeds, "neural": rows, "belief": belief_summary,
               "llm_bounded": hybrid, "paired_tests": paired_tests,
               "missing": sorted(set(missing)), "gate": gate}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
-    lines = ["# WWW2019 — Cross-dataset validation", "", f"> Gate: **{gate}**. Dataset: Shanghai-ISP.", "",
+    lines = [f"# {args.report_title}", "", f"> Gate: **{gate}**. Dataset: {args.dataset_label}.", "",
              "## Neural last-query", "", "| Variant | R@1 | R@5 | R@10 | MRR |", "|---|---:|---:|---:|---:|"]
     def fmt(item):
         if not item: return "N/A"
@@ -157,7 +159,7 @@ def main() -> None:
                 f"{low:.6f}–{high:.6f} | {row['holm_adjusted_p']:.6g} | "
                 f"{'yes' if row['significant_at_0.05'] else 'no'} |"
             )
-    lines += ["", "## Giới hạn", "", "- WWW2019 là Shanghai-ISP, không phải thí nghiệm 12 thành phố.",
+    lines += ["", "## Giới hạn", "", f"- Kết quả chỉ áp dụng cho {args.dataset_label}, không phải thí nghiệm 12 thành phố.",
               "- Neural last-query và Bayesian all-prefix được báo cáo riêng.",
               "- LLM bounded không được gọi là full-query."]
     if missing:

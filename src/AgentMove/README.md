@@ -147,6 +147,32 @@ python -m evaluate.analysis --eval_path="results/$exp_name/$city_name/agentmove/
 ./run_isp.sh
 ```
 
+### YJMob100K cross-dataset pipeline
+
+YJMob100K uses anonymous 500 m grid cells and 30-minute slots. The pipeline therefore treats a grid cell as the next-location class; the generated `latitude`/`longitude` fields are grid distances, not real geographic coordinates. OSM enrichment and Haversine evaluation must not be used.
+
+```bash
+# Download Dataset 1 and POI metadata from the official Zenodo record.
+./scripts/yjmob100k_pipeline.sh download
+
+# Prepare a reproducible 1,000-user subset (increase only after the smoke run).
+YJMOB_MAX_USERS=1000 ./scripts/yjmob100k_pipeline.sh prepare
+./scripts/yjmob100k_pipeline.sh audit
+
+# Verify the pipeline cheaply, then run the main cross-dataset experiments.
+DEVICE=cuda BATCH_SIZE=128 ./scripts/yjmob100k_pipeline.sh smoke
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 ./scripts/yjmob100k_pipeline.sh train-teacher
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 ./scripts/yjmob100k_pipeline.sh neural
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 ./scripts/yjmob100k_pipeline.sh frozen-order
+RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 ./scripts/yjmob100k_pipeline.sh bayesian
+
+# Optional bounded LLM evidence and final report.
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./scripts/yjmob100k_pipeline.sh llm-bounded
+./scripts/yjmob100k_pipeline.sh aggregate
+```
+
+Set `YJMOB_DATASET=2` to study the normal-to-emergency shift separately. Do not merge Dataset 1 and Dataset 2 because they answer different questions. `YJMOB_KEEP_STAYS=1` retains consecutive same-cell observations; the default removes them to avoid a trivial stay-prediction task.
+
 # 🔧 Debugging Tips
 1. If you encounter any exceptions, you can try relaxing the try-except control in the code to help with debugging.
 2. You can refer to the `launch.json` file in the `.vscode` directory to enable remote debugging.
@@ -154,7 +180,7 @@ python -m evaluate.analysis --eval_path="results/$exp_name/$city_name/agentmove/
 # ✅ TODO List
 - [x] Update LLM support, e.g., adding "qwen2.5" and "deepseek", support for openrouter platform
 - [ ] Add DL baselines, e.g., "Taming the Long Tail in Human Mobility Prediction"
-- [ ] Add new datasets, e.g., "YJMob100K"
+- [x] Add YJMob100K cross-dataset preprocessing and experiment pipeline
 
 # 🌟 Citation
 
