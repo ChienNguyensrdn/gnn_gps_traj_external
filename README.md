@@ -657,6 +657,9 @@ DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh smoke
 # Cross-dataset core: E0/E1/E5, order corruption, seed 42--44
 DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh neural
 
+# Frozen E5-correct: chỉ corrupt input test, không huấn luyện lại
+DEVICE=cuda EVAL_BATCH_SIZE=256 ./scripts/www2019_pipeline.sh frozen-order
+
 # B0-static và B3-DBN trên all-prefix
 DEVICE=cuda BATCH_SIZE=128 ./scripts/www2019_pipeline.sh bayesian
 
@@ -678,7 +681,8 @@ nằm ở `ideas/results_www2019.md`; bảng sinh tự động được ghi vào
 `ideas/results_www2019_generated.md` để không ghi đè phân tích. JSON máy đọc nằm ở
 `src/AgentMove/results/beliefmove-evo-www2019/aggregated/www2019_summary.json`.
 Lệnh `aggregate` thực hiện paired bootstrap/sign-flip cho `E1–E0`, `E5–E1`,
-`correct–reverse` và `correct–random`, sau đó áp dụng Holm correction chung.
+hai comparison retraining `correct–reverse/random` và hai comparison frozen
+checkpoint tương ứng, sau đó áp dụng Holm correction chung.
 ECE chỉ báo cáo mô tả vì không phân rã trực tiếp theo từng query.
 
 Có thể giới hạn tạm thời bằng `CITIES="Tokyo Nairobi"`, nhưng `aggregate` sẽ từ

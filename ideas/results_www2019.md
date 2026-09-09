@@ -130,6 +130,9 @@ Control này không cần huấn luyện lại. Nếu quality giảm có ý ngh�
 dụng chronology nhưng có khả năng thích nghi khi retrain trên corrupted order.
 Nếu vẫn không giảm, giả thuyết temporal-order không được hỗ trợ trên Shanghai.
 
+Script đã được chuẩn bị qua action `www2019_pipeline.sh frozen-order`; các con số
+vẫn để trống cho tới khi ba seed được đánh giá và aggregate lại.
+
 ## 6. Kết luận cross-dataset
 
 - Response KD là kết luận chuyển miền chắc chắn nhất: E1 vượt E0 về R@1, NLL và
@@ -149,6 +152,6 @@ Nếu vẫn không giảm, giả thuyết temporal-order không được hỗ tr
 - Paired tests và Holm correction: **ready**.
 - LLM Qwen2:7b, 200 query, no-OSM: **ready-bounded**.
 - Temporal-order retraining-under-corruption: **ready**, không hỗ trợ giả thuyết.
-- Temporal-order frozen-checkpoint control: **missing**.
+- Temporal-order frozen-checkpoint control: **script-ready, result-missing**.
 - Gate kỹ thuật toàn pipeline: **ready-www2019**.
 - Gate cho tuyên bố đầy đủ về temporal mechanism: **chưa hoàn thành**.

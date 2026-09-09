@@ -17,6 +17,8 @@ PAIRED_COMPARISONS = (
     ("E5-dual-vs-E1-kd", "E5-dual", "correct", "E1-kd", "correct"),
     ("correct-vs-reverse", "E5-dual", "correct", "E5-dual", "reverse"),
     ("correct-vs-random", "E5-dual", "correct", "E5-dual", "random"),
+    ("frozen-correct-vs-reverse", "E5-dual", "frozen-correct", "E5-dual", "frozen-reverse"),
+    ("frozen-correct-vs-random", "E5-dual", "frozen-correct", "E5-dual", "frozen-random"),
 )
 
 

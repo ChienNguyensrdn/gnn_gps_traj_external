@@ -31,6 +31,9 @@ def test_paired_summary_covers_locked_www2019_comparisons(tmp_path: Path) -> Non
         ("E5-dual", "correct"): [1, 1, 1, 2],
         ("E5-dual", "reverse"): [2, 2, 1, 2],
         ("E5-dual", "random"): [3, 2, 2, 2],
+        ("E5-dual", "frozen-correct"): [1, 1, 1, 2],
+        ("E5-dual", "frozen-reverse"): [2, 2, 1, 2],
+        ("E5-dual", "frozen-random"): [3, 2, 2, 2],
     }
     for variant, order in paths:
         _write_prediction(
@@ -49,6 +52,8 @@ def test_paired_summary_covers_locked_www2019_comparisons(tmp_path: Path) -> Non
     assert recall["E5-dual-vs-E1-kd"] > 0
     assert recall["correct-vs-reverse"] > 0
     assert recall["correct-vs-random"] > 0
+    assert recall["frozen-correct-vs-reverse"] > 0
+    assert recall["frozen-correct-vs-random"] > 0
     assert all(0.0 <= row["holm_adjusted_p"] <= 1.0 for row in rows)
 
 

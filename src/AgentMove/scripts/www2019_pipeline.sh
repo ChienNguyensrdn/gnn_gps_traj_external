@@ -79,6 +79,27 @@ neural(){
   done
 }
 
+frozen_order(){
+  need_python; need_prepared
+  local seed input_mode checkpoint output_dir
+  for seed in $SEEDS; do
+    checkpoint="$RESULTS/artifacts/full/Shanghai/E5-dual/correct/seed-$seed/best.pt"
+    [[ -f "$checkpoint" ]] || { echo "Missing frozen E5 checkpoint: $checkpoint" >&2; exit 2; }
+    for input_mode in correct reverse random; do
+      output_dir="$RESULTS/artifacts/full/Shanghai/E5-dual/frozen-$input_mode/seed-$seed"
+      if [[ -f "$output_dir/test.metrics.json" && -f "$output_dir/test.predictions.npz" && "${FORCE:-0}" != 1 ]]; then
+        echo "skip existing frozen-order $input_mode seed=$seed"
+        continue
+      fi
+      mkdir -p "$output_dir"
+      "$PY" -m hybrid.evaluate_student --checkpoint "$checkpoint" \
+        --test-csv "$BASE/getnext/test.csv" --output "$output_dir/test.metrics.json" \
+        --predictions-output "$output_dir/test.predictions.npz" --batch-size "${EVAL_BATCH_SIZE:-256}" \
+        --device "$DEVICE" --seed "$seed" --order-mode correct --input-order-mode "$input_mode"
+    done
+  done
+}
+
 bayesian(){
   local seed checkpoint output
   for seed in $SEEDS; do
@@ -116,7 +137,7 @@ aggregate(){
 
 case "$ACTION" in
   audit) audit;; download) download;; prepare) prepare;; train-teacher) train_teacher;; neural) neural;;
-  bayesian) bayesian;; llm-bounded) llm_bounded;; status) status;; aggregate) aggregate;;
+  frozen-order) frozen_order;; bayesian) bayesian;; llm-bounded) llm_bounded;; status) status;; aggregate) aggregate;;
   smoke)
     need_prepared
     [[ -f "$BASE/neural_cgm/best.pt" ]] || train_teacher
@@ -124,6 +145,6 @@ case "$ACTION" in
       TRAIN_LIMIT="${SMOKE_TRAIN_LIMIT:-1000}" VALIDATION_LIMIT="${SMOKE_VALIDATION_LIMIT:-200}" \
       RUN_TAG=www2019-smoke BATCH_SIZE="$BATCH_SIZE" DEVICE="$DEVICE" ./scripts/beliefmove_evo.sh train-student
     ;;
-  all) prepare; train_teacher; neural; bayesian; llm_bounded; aggregate;;
-  *) echo "Usage: $0 <audit|download|prepare|train-teacher|smoke|neural|bayesian|llm-bounded|status|aggregate|all>" >&2; exit 2;;
+  all) prepare; train_teacher; neural; frozen_order; bayesian; llm_bounded; aggregate;;
+  *) echo "Usage: $0 <audit|download|prepare|train-teacher|smoke|neural|frozen-order|bayesian|llm-bounded|status|aggregate|all>" >&2; exit 2;;
 esac

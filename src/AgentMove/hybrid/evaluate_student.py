@@ -65,10 +65,11 @@ def evaluate(args) -> dict[str, float]:
     torch = _torch(); checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     model, _ = build_checkpoint_model(checkpoint); model.load_state_dict(checkpoint["model_state"])
     device = _device(torch, args.device); model.to(device).eval()
-    order_mode = resolve_order_mode(checkpoint, args.order_mode)
+    training_order_mode = resolve_order_mode(checkpoint, args.order_mode)
+    input_order_mode = args.input_order_mode or training_order_mode
     examples = corrupt_examples(
         build_examples(pd.read_csv(args.test_csv), checkpoint["user_map"], all_prefixes=False),
-        order_mode,
+        input_order_mode,
         args.seed,
     )
     all_logits, all_labels = [], []
@@ -82,7 +83,9 @@ def evaluate(args) -> dict[str, float]:
     logits = np.concatenate(all_logits); labels = np.concatenate(all_labels)
     metrics = summarize_logits(logits, labels)
     metrics.update({"device": str(device), "checkpoint": str(Path(args.checkpoint).resolve()),
-                    "order_mode": order_mode, "seed": args.seed})
+                    "order_mode": training_order_mode,
+                    "training_order_mode": training_order_mode,
+                    "input_order_mode": input_order_mode, "seed": args.seed})
     output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({"metrics": metrics}, indent=2) + "\n", encoding="utf-8")
     if args.predictions_output:
@@ -98,6 +101,8 @@ def main() -> None:
     parser.add_argument("--output", required=True); parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--device", default="auto"); parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--order-mode", choices=["auto", "correct", "reverse", "random"], default="auto")
+    parser.add_argument("--input-order-mode", choices=["correct", "reverse", "random"],
+                        help="Override test input order without changing the checkpoint training order")
     parser.add_argument("--predictions-output", help="Optional per-query NPZ for paired significance tests")
     evaluate(parser.parse_args())
 
