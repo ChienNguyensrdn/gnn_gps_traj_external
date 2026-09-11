@@ -200,6 +200,10 @@ RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
 # Strict per-dataset/city reports and paired tests.
 ./scripts/publication_core_3datasets.sh status
 SIGNIFICANCE_ITERATIONS=10000 ./scripts/publication_core_3datasets.sh aggregate
+
+# Ghép 12 báo cáo TIST2015, WWW2019 và YJMob100K vào một file Markdown.
+./scripts/publication_core_3datasets.sh report
+# Bản nháp khi một số báo cáo chưa sinh xong: ALLOW_INCOMPLETE=1 ./scripts/publication_core_3datasets.sh report
 ```
 
 Set `FULL_ABLATION=1` for E2/E3/E4/E6 in addition to E0/E1/E5. Teacher

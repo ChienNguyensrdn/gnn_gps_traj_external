@@ -169,10 +169,13 @@ status(){
   need_python; local dataset unit
   for dataset in $DATASETS; do for unit in $(units "$dataset"); do aggregate_one "$dataset" "$unit" --allow-incomplete || true; done; done
 }
+report(){
+  ./scripts/aggregate_publication_core_markdown.sh
+}
 
 case "$ACTION" in
   audit) audit;; prepare) prepare;; neural) neural;; temporal) temporal;; belief) belief;;
-  teacher-robustness) teacher_robustness;; calibration) calibration;; aggregate) aggregate;; status) status;;
+  teacher-robustness) teacher_robustness;; calibration) calibration;; aggregate) aggregate;; status) status;; report) report;;
   core) prepare; neural; temporal; belief; aggregate;;
-  *) echo "Usage: $0 <audit|prepare|neural|temporal|belief|teacher-robustness|calibration|status|aggregate|core>" >&2; exit 2;;
+  *) echo "Usage: $0 <audit|prepare|neural|temporal|belief|teacher-robustness|calibration|status|aggregate|report|core>" >&2; exit 2;;
 esac
