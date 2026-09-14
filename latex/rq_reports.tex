@@ -1,18 +1,18 @@
 % Generated mechanically from ideas/results_rq1.md ... results_rq13.md.
 % Run: python3 build_rq_reports.py
 
-\section{RQ1 --- Baseline reproducibility}
+\subsection{RQ1 --- Baseline reproducibility}
 
 \begin{quote}\small Báo cáo phân biệt quantitative baseline trên Tokyo matched full-test và baseline TIST2015 bounded 12-city. Hai protocol khác query/scope nên không so sánh trực tiếp trị tuyệt đối hoặc tính paired significance giữa chúng.\end{quote}
-\subsection{1. Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ1 kiểm tra liệu các baseline định lượng và AgentMove có được tái lập ổn định trên preprocessing, temporal split và candidate space đã khóa hay không. Quantitative baseline được chạy với seed 42--44; Markov deterministic và AgentMove bounded được tổng hợp riêng trên đúng 12 thành phố TIST2015.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Thiết lập mốc tham chiếu có thể tái lập để mọi cải thiện ở các RQ sau được so sánh trên một nền công bằng, đồng thời phát hiện sai khác do preprocessing, split hoặc candidate space thay vì do phương pháp.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Các baseline stochastic có đủ tối thiểu ba seed và checkpoint chỉ chọn bằng validation.
@@ -26,11 +26,11 @@ hạn bounded/full được ghi rõ; không yêu cầu một baseline cụ thể
 
 \end{itemize}
 
-\subsection{2. Quantitative baselines --- Tokyo matched full-test}
+\subsubsection*{Quantitative baselines --- Tokyo matched full-test}
 
 Seeds: 42, 43, 44. Checkpoint được chọn bằng validation; test chỉ dùng báo cáo cuối.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -47,7 +47,7 @@ student-ce & 0.133789 $\pm$ 0.000470 & 0.272528 $\pm$ 0.003174 & 0.325467 $\pm$ 
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Phân tích quantitative baseline}
+\paragraph{Phân tích quantitative baseline}
 
 Transformer teacher đạt ranking tốt nhất: R@1 = 0,150417, R@10 = 0,362089 và MRR = 0,222782. So với GRU teacher, mức tăng mô tả lần lượt khoảng 0,006779 R@1, 0,017198 R@10 và 0,009599 MRR.
 
@@ -55,9 +55,9 @@ Tuy nhiên, Transformer không tốt nhất về probabilistic calibration. NLL 
 
 Student-CE thấp hơn cả hai teacher về ranking, xác nhận một lightweight student chỉ học cross-entropy chưa tái lập được knowledge của heavy teacher. Độ lệch chuẩn nhỏ qua ba seed cho thấy thứ hạng tổng quát Transformer teacher > GRU teacher > student-CE ổn định trong protocol Tokyo này.
 
-\subsection{3. TIST2015 bounded baseline --- 12 thành phố}
+\subsubsection*{TIST2015 bounded baseline --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -73,7 +73,7 @@ AgentMove original & ready-bounded & 12 & 200 & 0.134024 & 0.334174 & N/A & 0.20
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Phân tích bounded baseline}
+\paragraph{Phân tích bounded baseline}
 
 Trên macro average 12 thành phố, AgentMove cao hơn Markov về các metric chung:
 
@@ -87,7 +87,7 @@ Trên macro average 12 thành phố, AgentMove cao hơn Markov về các metric 
 
 Markov/Bi-gram là deterministic baseline nên một run là đủ cho cùng input/protocol; không tạo pseudo-seed để sinh standard deviation giả. AgentMove sử dụng Qwen2:7b qua Ollama và được ghi nhãn \texttt{no-OSM matched}, do đó chưa đại diện cho hàng “Ours/full world knowledge”.
 
-\subsection{4. Quan hệ giữa hai protocol}
+\subsubsection*{Quan hệ giữa hai protocol}
 
 Không so trực tiếp các số Tokyo full-test với macro bounded 12-city vì chúng khác nhau ở:
 
@@ -101,7 +101,7 @@ Không so trực tiếp các số Tokyo full-test với macro bounded 12-city v�
 
 Quantitative Tokyo trả lời tính ổn định qua seed trên một matched neural protocol. TIST2015 bounded trả lời khả năng tái lập Markov và AgentMove trên cùng giới hạn 200 query mỗi thành phố. Hai phần bổ sung cho nhau nhưng không tạo thành một bảng xếp hạng duy nhất.
 
-\subsection{5. Kết luận RQ1}
+\subsubsection*{Kết luận RQ1}
 
 \begin{itemize}
 \item Quantitative baseline được tái lập đầy đủ trên Tokyo với seed 42--44 và biến thiên nhỏ.
@@ -111,7 +111,7 @@ Quantitative Tokyo trả lời tính ổn định qua seed trên một matched n
 \item RQ1 được khóa dưới dạng hai protocol báo cáo riêng, không dùng số liệu cross-protocol để claim superiority.
 \end{itemize}
 
-\subsection{6. Publication gate và giới hạn}
+\subsubsection*{Publication gate và giới hạn}
 
 \begin{itemize}
 \item Quantitative matched multi-seed: \textbf{ready}.
@@ -125,15 +125,15 @@ Quantitative Tokyo trả lời tính ổn định qua seed trên một matched n
 \item Việc kiểm tra RQ1 được thực hiện hồi cứu sau các RQ sau và phải được mô tả trung thực trong manuscript.
 \end{itemize}
 
-\subsection{7. Cập nhật phạm vi 12 thành phố}
+\subsubsection*{Cập nhật phạm vi 12 thành phố}
 
 Hai baseline bounded đã chạy đủ 12 thành phố với \texttt{limit=200}: Markov-bigram đạt macro Acc@1 \texttt{0,112147}, Acc@5 \texttt{0,210307}, Acc@10 \texttt{0,242303}, MRR \texttt{0,158516}; AgentMove-original đạt Acc@1 \texttt{0,134024}, Acc@5 \texttt{0,334174}, MRR \texttt{0,205829} (Acc@10 không có vì chỉ trả về 5 ứng viên). Snapshot không còn thiếu artifact bắt buộc. Đây vẫn là kết quả bounded và không so trực tiếp với Tokyo full-test.
 
-\clearpage
-\section{RQ2 --- Bayesian student data-only}
+
+\subsection{RQ2 --- Bayesian student data-only}
 
 \begin{quote}\small Mọi prior và transition chỉ được fit trên train; test dùng protocol \texttt{last-query matched}. Các baseline deterministic chỉ tính một run, không tạo pseudo-seed.\end{quote}
-\subsection{1. Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ2 kiểm tra mức chất lượng có thể đạt được khi suy luận vị trí kế tiếp chỉ từ thống kê dữ liệu, không dùng LLM hoặc OSM. Bốn baseline data-only được so với quantitative teacher trên cùng preprocessing, temporal split, candidate space và test query của Tokyo.
 
@@ -145,11 +145,11 @@ RQ2 kiểm tra mức chất lượng có thể đạt được khi suy luận v�
 \item \texttt{quantitative-teacher}: GRU teacher định lượng, chạy với seed 42, 43 và 44.
 \end{itemize}
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Định lượng mức đóng góp tối đa của prior user/time và transition khi không có LLM/OSM, đồng thời xác định liệu DBN có thực sự tốt hơn BN tĩnh và còn cách teacher học sâu bao xa.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Prior và transition chỉ fit trên train; test không tham gia tuning.
@@ -164,9 +164,9 @@ cáo; “đạt” ở đây là trả lời được đóng góp của từng n
 
 \end{itemize}
 
-\subsection{2. Kết quả test}
+\subsubsection*{Kết quả test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -185,11 +185,11 @@ quantitative-teacher & 0.143638 $\pm$ 0.001971 & 0.290502 $\pm$ 0.002346 & 0.344
 \end{adjustbox}
 \end{table}
 
-\subsection{3. Paired comparisons}
+\subsubsection*{Paired comparisons}
 
 Positive effect nghĩa là variant đứng trước tốt hơn. Với NLL và Brier, dấu đã được quy đổi để giá trị dương luôn mang nghĩa variant đứng trước tốt hơn. Holm correction được áp dụng chung cho toàn bộ 30 phép kiểm định.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -233,9 +233,9 @@ dbn-data-only-vs-bn-data-only & brier & -0.000089 & -0.000098---0.000080 & 0.002
 \end{adjustbox}
 \end{table}
 
-\subsection{4. Phân tích kết quả}
+\subsubsection*{Phân tích kết quả}
 
-\subsubsection{4.1. DBN là baseline data-only tốt nhất về ranking}
+\paragraph{DBN là baseline data-only tốt nhất về ranking}
 
 \texttt{dbn-data-only} đạt R@1 = 0,104171, R@5 = 0,245498, R@10 = 0,316860 và MRR = 0,171933, cao nhất trong bốn baseline chỉ dùng dữ liệu. So với \texttt{bn-data-only}, DBN tăng mô tả 0,020130 R@1, 0,031308 R@5, 0,028462 R@10 và 0,024189 MRR. Điều này cho thấy transition từ POI gần nhất bổ sung tín hiệu hữu ích ngoài user/time priors.
 
@@ -243,27 +243,27 @@ Paired test trực tiếp xác nhận toàn bộ mức tăng ranking đều có 
 
 Đổi lại, DBN làm NLL xấu hơn 0,158627 và Brier xấu hơn 0,000089; cả hai trade-off cũng có ý nghĩa thống kê. DBN vì thế không trội BN trên mọi phương diện: nó cải thiện thứ hạng nhưng làm xác suất kém hơn.
 
-\subsubsection{4.2. Teacher vẫn vượt toàn bộ baseline data-only}
+\paragraph{Teacher vẫn vượt toàn bộ baseline data-only}
 
 Quantitative teacher đạt R@1 = 0,143638 và MRR = 0,213183. Ngay cả khi so với DBN mạnh nhất, teacher vẫn cao hơn 0,039467 R@1, 0,045004 R@5, 0,028031 R@10 và 0,041249 MRR. Tất cả chênh lệch ranking này có bootstrap 95\% CI không cắt 0 và Holm-adjusted p = 0,00239976.
 
 Kết quả trả lời phần chính của RQ2: empirical Bayesian priors có thể tạo một baseline có năng lực đáng kể, nhưng dữ liệu transition/user/time đơn thuần chưa thay thế được representation được học bởi quantitative teacher.
 
-\subsubsection{4.3. BN và Markov thể hiện các ưu thế khác nhau theo cutoff}
+\paragraph{BN và Markov thể hiện các ưu thế khác nhau theo cutoff}
 
 Markov có R@1 = 0,095581, cao hơn BN = 0,084041, nhưng BN có R@10 = 0,288398, cao hơn Markov = 0,264645. Markov tập trung tốt hơn vào dự đoán đầu bảng, trong khi geometric user/time fusion mở rộng candidate coverage ở top-10. DBN kết hợp cả hai nguồn tín hiệu và đứng đầu nhóm data-only trên toàn bộ Recall@K/MRR.
 
-\subsubsection{4.4. Không dùng ECE thấp của unigram để kết luận mô hình tốt}
+\paragraph{Không dùng ECE thấp của unigram để kết luận mô hình tốt}
 
 Unigram có ECE rất thấp (0,002051) và NLL = 8,753139, nhưng ranking rất yếu: R@1 chỉ 0,024322 và MRR chỉ 0,057474. Một phân phối gần prior toàn cục có thể ít tự tin và tạo ECE thấp dù gần như không cá nhân hóa đúng vị trí kế tiếp. Brier của unigram cũng rất xấu (0,997667).
 
 Do đó calibration phải được đọc đồng thời với Recall/MRR, NLL, Brier và reliability behavior. Không được claim unigram là baseline tốt nhất chỉ vì ECE hoặc NLL thấp. NLL giữa teacher và unigram cũng chưa khác biệt có ý nghĩa sau Holm correction (CI cắt 0; Holm p = 0,0791921).
 
-\subsubsection{4.5. Xác suất data-only cần được hiệu chỉnh tốt hơn}
+\paragraph{Xác suất data-only cần được hiệu chỉnh tốt hơn}
 
 DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 0,103411, đều xấu hơn teacher. Đây là trade-off rõ giữa candidate ranking và chất lượng xác suất. Nếu dùng DBN làm belief module hoặc prior cho downstream fusion, cần calibration trên validation thay vì dùng trực tiếp xác suất empirical chưa hiệu chỉnh.
 
-\subsection{5. Kết luận RQ2}
+\subsubsection*{Kết luận RQ2}
 
 \begin{itemize}
 \item DBN là baseline data-only mạnh nhất về Recall@K và MRR trong bốn cấu hình đã chạy.
@@ -273,7 +273,7 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 \item ECE thấp đơn lẻ không đồng nghĩa với dự đoán tốt; unigram là ví dụ rõ nhất.
 \end{itemize}
 
-\subsection{6. Protocol gate và giới hạn}
+\subsubsection*{Protocol gate và giới hạn}
 
 \begin{itemize}
 \item Gate: \textbf{ready-tokyo-matched-last-query}.
@@ -285,9 +285,9 @@ DBN cải thiện ranking nhưng có NLL = 9,507008, Brier = 0,999571 và ECE = 
 \item DBN-vs-BN dùng một deterministic paired run; không pseudo-replicate theo ba teacher seed.
 \end{itemize}
 
-\subsection{7. Kết quả mở rộng TIST2015 --- 12 thành phố}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -305,11 +305,11 @@ quantitative-teacher & 0,171751 $\pm$ 0,002154 & 0,324055 $\pm$ 0,002071 & 0,377
 
 Teacher tiếp tục vượt DBN trên các metric ranking và calibration ở mức macro. Snapshot 12-city đủ artifact bắt buộc, nhưng chưa có paired significance đa thành phố; DBN deterministic chỉ được tính một lần, không pseudo-replicate.
 
-\clearpage
-\section{RQ3 --- LLM knowledge distillation}
+
+\subsection{RQ3 --- LLM knowledge distillation}
 
 \begin{quote}\small Trọng số fusion được fit trên validation; quality và paired tests được báo cáo trên bounded matched test gồm 200 query tại Tokyo. Đây là frozen belief-fusion ablation của teacher signals, không phải một lượt huấn luyện lại neural student.\end{quote}
-\subsection{1. Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ3 kiểm tra structured mobility beliefs từ LLM có giúp Bayesian student tốt hơn data-only hay không, đồng thời tách đóng góp của quantitative teacher và LLM teacher:
 
@@ -322,11 +322,11 @@ RQ3 kiểm tra structured mobility beliefs từ LLM có giúp Bayesian student t
 
 Các nguồn được kết hợp bằng log-linear fusion. Trọng số được chọn theo \texttt{R@1 + R@10} trên validation; test không tham gia lựa chọn.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Tách incremental utility của structured LLM knowledge khỏi quantitative teacher: LLM có ích độc lập hay chỉ lặp lại tín hiệu đã có trong mô hình định lượng.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Cache LLM phải bất biến, phủ đủ query và không gọi lại LLM trong evaluation.
@@ -339,9 +339,9 @@ chưa xác nhận incremental utility; bounded result không được suy diễn
 
 \end{itemize}
 
-\subsection{2. Kết quả test}
+\subsubsection*{Kết quả test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -359,11 +359,11 @@ M4-both & 1.00 & 0.75 & 0.125000 & 0.220000 & 0.230000 & 0.169674 & 8.583706 & 0
 \end{adjustbox}
 \end{table}
 
-\subsection{3. Paired comparisons}
+\subsubsection*{Paired comparisons}
 
 Positive effect nghĩa là variant đứng trước tốt hơn. Với NLL và Brier, dấu đã được đảo để giá trị dương luôn mang nghĩa tốt hơn. Holm correction được áp dụng chung cho toàn bộ 30 phép kiểm định.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -407,35 +407,35 @@ M4-both-vs-M3-quantitative & brier & 0.005126 & -0.004063--0.014255 & 1 & no \\
 \end{adjustbox}
 \end{table}
 
-\subsection{4. Phân tích kết quả}
+\subsubsection*{Phân tích kết quả}
 
-\subsubsection{4.1. Quantitative teacher là nguồn gain chính}
+\paragraph{Quantitative teacher là nguồn gain chính}
 
 M3 tăng R@1 từ 0,035 lên 0,115, R@10 từ 0,135 lên 0,240 và MRR từ 0,074670 lên 0,161094 so với M1. Các gain Recall@K/MRR đều có ý nghĩa sau Holm correction. Điều này xác nhận learned quantitative mobility pattern bổ sung lượng thông tin lớn mà empirical user/time BN không nắm được.
 
 NLL và Brier của M3 tốt hơn M1 về giá trị trung bình, nhưng paired confidence intervals cắt 0 và Holm p = 1. Vì vậy chỉ có thể khóa kết luận về ranking, chưa thể khẳng định quantitative teacher cải thiện probabilistic quality trong bounded sample này.
 
-\subsubsection{4.2. LLM-only có tín hiệu dương nhưng chưa đạt significance}
+\paragraph{LLM-only có tín hiệu dương nhưng chưa đạt significance}
 
 M2 cao hơn M1 về tất cả Recall@K/MRR theo điểm ước lượng: R@1 tăng 0,020, R@10 tăng 0,020 và MRR tăng 0,013243. Tuy vậy không phép so sánh M2--M1 nào còn significant sau Holm correction. Một số bootstrap CI như R@10 và Brier nằm trên 0, nhưng adjusted p vẫn không đạt ngưỡng; báo cáo dùng gate bảo thủ và không claim LLM knowledge hữu ích độc lập.
 
-Theo tiêu chí đã định nghĩa trong \texttt{ideas/pipline.md}, kết quả hiện tại chưa đủ để khẳng định M2 tốt hơn M1. Cần tăng số query, mở rộng thành phố hoặc cải thiện structured evidence trước khi đưa ra claim này.
+Theo tiêu chí đã định nghĩa trong \path{ideas/pipline.md}, kết quả hiện tại chưa đủ để khẳng định M2 tốt hơn M1. Cần tăng số query, mở rộng thành phố hoặc cải thiện structured evidence trước khi đưa ra claim này.
 
-\subsubsection{4.3. M4 tốt nhất ở R@1/MRR nhưng chưa chứng minh gain bổ sung của LLM}
+\paragraph{M4 tốt nhất ở R@1/MRR nhưng chưa chứng minh gain bổ sung của LLM}
 
 M4 đạt R@1 = 0,125 và MRR = 0,169674, cao nhất trong bốn variant. M4 cũng có NLL và Brier trung bình thấp nhất. Tuy nhiên, so sánh quyết định cho giá trị tăng thêm của LLM là M4--M3, và không metric nào significant sau Holm correction.
 
 M4 tăng R@1 thêm 0,010 và MRR thêm 0,008580 so với M3, nhưng làm R@10 giảm 0,010. Vì vậy chưa thể kết luận cả hai teacher tốt hơn quantitative teacher đơn lẻ. Trọng số LLM = 0,75 được chọn trên validation chỉ cho thấy validation objective ưu tiên evidence này; nó không thay thế kiểm định trên test.
 
-\subsubsection{4.4. M4 vượt M2 chủ yếu phản ánh quantitative teacher}
+\paragraph{M4 vượt M2 chủ yếu phản ánh quantitative teacher}
 
 M4 vượt M2 có ý nghĩa trên toàn bộ Recall@K/MRR. Vì M4 khác M2 ở việc thêm quantitative teacher, kết quả này củng cố kết luận quantitative teacher hữu ích. Nó không phải bằng chứng riêng cho LLM, do cả hai phía đều đã chứa LLM signal.
 
-\subsubsection{4.5. Calibration không đi cùng ranking}
+\paragraph{Calibration không đi cùng ranking}
 
 M1 có ECE thấp nhất (0,021684), trong khi M3 và M4 cải thiện mạnh ranking nhưng ECE tăng lên 0,102825 và 0,116238. Không có paired ECE test vì ECE là aggregate metric. Không nên diễn giải M1 là mô hình tổng thể tốt hơn chỉ nhờ ECE thấp, cũng không nên gọi M4 calibrated dù NLL/Brier trung bình giảm.
 
-\subsection{5. Trả lời RQ3}
+\subsubsection*{Trả lời RQ3}
 
 \begin{itemize}
 \item Structured LLM beliefs tạo gain mô tả khi thêm vào BN data-only, nhưng chưa có bằng chứng significance sau multiple-testing correction.
@@ -444,7 +444,7 @@ M1 có ECE thấp nhất (0,021684), trong khi M3 và M4 cải thiện mạnh ra
 \item Claim hợp lệ hiện tại là “quantitative teacher hữu ích”; claim “LLM knowledge distillation hữu ích” vẫn \textbf{chưa được xác nhận} trong bounded RQ3.
 \end{itemize}
 
-\subsection{6. Protocol gate và giới hạn}
+\subsubsection*{Protocol gate và giới hạn}
 
 \begin{itemize}
 \item Gate kỹ thuật: \textbf{ready-bounded-matched}.
@@ -457,9 +457,9 @@ M1 có ECE thấp nhất (0,021684), trong khi M3 và M4 cải thiện mạnh ra
 \item Phân tích paired chi tiết phía trên áp dụng cho Tokyo; macro 12-city bounded được báo cáo riêng bên dưới.
 \end{itemize}
 
-\subsection{7. Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -479,11 +479,11 @@ M4-both & 0,135929 & 0,271209 & 0,324913 & 0,202728 & 6,783468 \\
 
 M4 có macro R@1, R@10, MRR và NLL tốt nhất, nhưng chênh lệch M4--M3 nhỏ. Đây là Qwen2:7b, \texttt{limit=200}, \texttt{no-OSM}; gate \textbf{ready-bounded-12-city}, không phải full-query hay paired significance đa thành phố.
 
-\clearpage
-\section{BeliefMove-Evo --- Kết quả thực nghiệm}
+
+\subsection{RQ4 -- BeliefMove-Evo --- Kết quả thực nghiệm}
 
 \begin{quote}\small Cập nhật ngày 23/08/2026 từ các raw result của TIST2015-Tokyo. Các bảng tách riêng validation và test để tránh dùng test set trong quá trình chọn mô hình.\end{quote}
-\subsection{1. Phạm vi RQ4}
+\subsubsection*{Phạm vi RQ4}
 
 RQ4 kiểm tra đóng góp của từng thành phần trong \textbf{distillation tiến hóa biểu diễn}. Tất cả thí nghiệm bên dưới sử dụng:
 
@@ -497,15 +497,15 @@ RQ4 kiểm tra đóng góp của từng thành phần trong \textbf{distillation
 
 Có 6 cấu hình × 3 seed × 2 split được tổng hợp, tương ứng \textbf{36 raw runs}. Cả sáu cấu hình trên test split đều vượt publication gate tối thiểu ba seed.
 
-\subsubsection{Câu hỏi nghiên cứu}
+\paragraph{Câu hỏi nghiên cứu}
 
 Các thành phần response KD, trajectory alignment, velocity alignment và temporal evolution đóng góp bao nhiêu vào chất lượng student, và cấu hình dual-axis đầy đủ có tốt hơn CE/KD cơ bản hay không?
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Thực hiện ablation có kiểm soát để xác định gain đến từ thành phần nào, tránh gán toàn bộ cải thiện cho kiến trúc đầy đủ khi phần lớn gain có thể đến từ KD.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Mỗi cấu hình E0--E5 có ít nhất ba seed, cùng split/candidate/student architecture.
@@ -518,13 +518,13 @@ protocol được xem là đạt, nhưng claim “E5 tốt hơn” chỉ hợp l
 
 \end{itemize}
 
-\subsection{2. E0--E5 là gì?}
+\subsubsection*{E0--E5 là gì?}
 
 Hàm mất mát tổng quát của student:
 
 \[ \mathcal{L} = \mathcal{L}_{CE} + \lambda_{KD}\mathcal{L}_{KD} + \lambda_{traj}\mathcal{L}_{traj} + \lambda_{vel}\mathcal{L}_{vel} + \lambda_{temp}\mathcal{L}_{temp}. \]
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -546,7 +546,7 @@ Biến thể & Thành phần loss & Giải thích \\
 
 Trong cấu hình hiện tại, loss được bật có trọng số \texttt{1.0} và loss bị loại bỏ có trọng số \texttt{0.0}.
 
-\subsubsection{Ý nghĩa các loss}
+\paragraph{Ý nghĩa các loss}
 
 \begin{itemize}
 \item \textbf{CE --- Cross-Entropy:} học trực tiếp đích POI tiếp theo từ ground truth.
@@ -556,11 +556,11 @@ Trong cấu hình hiện tại, loss được bật có trọng số \texttt{1.0
 \item \textbf{Temporal:} đồng bộ quá trình biến đổi biểu diễn qua các bước thời gian của trajectory.
 \end{itemize}
 
-\subsection{3. Kết quả test chính}
+\subsubsection*{Kết quả test chính}
 
 Ký hiệu $\uparrow$ là càng lớn càng tốt; $\downarrow$ là càng nhỏ càng tốt. Số liệu là mean $\pm$ sample standard deviation trên ba seed.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -580,9 +580,9 @@ E4-layer-correct & 0.144949 $\pm$ 0.002026 & 0.301784 $\pm$ 0.000978 & 0.365935 
 \end{adjustbox}
 \end{table}
 
-\subsection{4. Khoảng tin cậy 95\% trên test}
+\subsubsection*{Khoảng tin cậy 95\% trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -604,11 +604,11 @@ E4-layer-correct & 0.143345--0.147226 & 0.301025--0.302888 & 0.365194--0.367057 
 
 Các khoảng tin cậy được bootstrap từ ba giá trị seed. Vì $n=3$ còn nhỏ, chúng chủ yếu phản ánh độ ổn định giữa các lần chạy và không thay thế kiểm định paired trên từng query.
 
-\subsection{5. Kết quả validation}
+\subsubsection*{Kết quả validation}
 
 Validation chỉ dùng để chọn checkpoint/hyperparameter; không dùng làm kết quả cuối cùng của paper.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -630,17 +630,17 @@ E5-dual-correct & 0.159366 $\pm$ 0.002308 & \textbf{0.333297 $\pm$ 0.001550} & \
 
 \texttt{not ready} ở bảng validation là hành vi có chủ đích của publication gate: chỉ test split đủ ít nhất ba seed mới được coi là kết quả báo cáo cuối.
 
-\subsection{6. Phân tích RQ4}
+\subsubsection*{Phân tích RQ4}
 
-\subsubsection{6.1. Đóng góp chính đến từ knowledge distillation}
+\paragraph{Đóng góp chính đến từ knowledge distillation}
 
 So với E0, E1 cải thiện toàn bộ ranking metrics. Điều này cho thấy phân phối mềm của teacher cung cấp tín hiệu giàu thông tin hơn so với chỉ học nhãn cứng bằng CE.
 
-\subsubsection{6.2. Trajectory hoặc velocity riêng lẻ chưa tạo thêm lợi ích}
+\paragraph{Trajectory hoặc velocity riêng lẻ chưa tạo thêm lợi ích}
 
 E2 và E3 không vượt E1 trên các Recall và MRR test. Do đó, kết quả hiện tại không ủng hộ tuyên bố rằng trajectory loss hoặc velocity loss độc lập luôn cải thiện dự đoán. Các loss này có thể cần tín hiệu bổ trợ hoặc cách cân bằng trọng số tốt hơn.
 
-\subsubsection{6.3. E5 đạt mean tốt nhất trên toàn bộ test metrics}
+\paragraph{E5 đạt mean tốt nhất trên toàn bộ test metrics}
 
 E5-dual đạt Recall@1/5/10 và MRR cao nhất, đồng thời có NLL, Brier và ECE thấp nhất. So với E0, E5 cải thiện tương đối:
 
@@ -655,7 +655,7 @@ E5-dual đạt Recall@1/5/10 và MRR cao nhất, đồng thời có NLL, Brier v
 
 So với E1-kd, E5 chỉ cải thiện nhỏ: +0.001828 Recall@1, +0.000380 Recall@5 và +0.002191 Recall@10. Kết quả gợi ý rằng dual-axis evolution bổ sung lợi ích về ranking và calibration, nhưng phần lớn mức tăng so với E0 vẫn đến từ KD.
 
-\subsubsection{6.4. Giới hạn diễn giải}
+\paragraph{Giới hạn diễn giải}
 
 \begin{itemize}
 \item Kết quả hiện chỉ thuộc \textbf{Tokyo}, không đại diện cho macro-average 12 thành phố TIST2015.
@@ -664,10 +664,10 @@ So với E1-kd, E5 chỉ cải thiện nhỏ: +0.001828 Recall@1, +0.000380 Reca
 \item Validation và test có generalization gap, nhưng thứ hạng tổng quát E0 < E1/E2/E3/E4 < E5 vẫn được duy trì trên test.
 \end{itemize}
 
-\subsection{7. Kết luận có thể dùng trong bài báo}
+\subsubsection*{Kết luận có thể dùng trong bài báo}
 
 \begin{quote}\small Trên TIST2015-Tokyo, response knowledge distillation là thành phần tạo ra mức cải thiện lớn nhất so với mô hình chỉ dùng cross-entropy. Các loss trajectory và velocity khi sử dụng riêng lẻ chưa vượt baseline KD. Mô hình đầy đủ E5-dual đạt mean tốt nhất trên toàn bộ ranking và calibration metrics, cho thấy tiềm năng của việc kết hợp tiến hóa biểu diễn theo chiều layer và thời gian. Tuy nhiên, do thí nghiệm hiện có ba seed và chỉ trên Tokyo, lợi ích nhỏ của E5 so với E1 cần được xác nhận bằng paired significance test và đánh giá đa thành phố trước khi đưa ra kết luận tổng quát.\end{quote}
-\subsection{Publication gate}
+\subsubsection*{Publication gate}
 
 \begin{itemize}
 \item \texttt{ready}: test split và đủ ít nhất ba seed.
@@ -675,9 +675,9 @@ So với E1-kd, E5 chỉ cải thiện nhỏ: +0.001828 Recall@1, +0.000380 Reca
 \item Trạng thái hiện tại: \textbf{RQ4 Tokyo và macro 12 thành phố đã đủ artifact cho E0--E5; benchmark GPU 12-city được chấp nhận ở mức nội bộ do contention}.
 \end{itemize}
 
-\subsection{8. Kết quả mở rộng TIST2015 --- 12 thành phố}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -699,72 +699,72 @@ E5-dual & 0,171903 $\pm$ 0,000780 & 0,327474 $\pm$ 0,001340 & 0,384337 $\pm$ 0,0
 
 E5 đạt mean macro tốt nhất trên toàn bộ chỉ số. Đây là bằng chứng đa thành phố, nhưng bảng macro chưa thay thế paired test theo query/city; không suy diễn significance từ độ lệch mean $\pm$ std.
 
-\clearpage
-\section{RQ5 --- Ảnh hưởng của thứ tự trajectory}
+
+\subsection{RQ5 --- Ảnh hưởng của thứ tự trajectory}
 
 \begin{quote}\small Tên chuẩn hóa của báo cáo RQ5. Bảng kết quả và paired significance đầy đủ nằm\end{quote}
 \begin{quote}\small tại \href{result\_rq5.md}{result\_rq5.md}.\end{quote}
-\subsection{Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 Khi phá vỡ thứ tự thời gian của trajectory, chất lượng dự đoán vị trí kế tiếp có suy giảm hay không?
 
-\subsection{Mục tiêu}
+\subsubsection*{Mục tiêu}
 
 Kiểm chứng rằng mô hình sử dụng động lực tuần tự thay vì chỉ dựa vào tần suất hoặc tập hợp POI đã quan sát.
 
-\subsection{Tiêu chí đạt}
+\subsubsection*{Tiêu chí đạt}
 
 \texttt{Correct} phải vượt \texttt{random} và \texttt{reverse} trên paired Recall/MRR, với bootstrap CI không chứa 0 và Holm-adjusted p < 0,05. Corruption chỉ được đổi thứ tự input, không đổi query, target, split hoặc candidate set. Negative result vẫn hoàn thành RQ nhưng không hỗ trợ giả thuyết temporal order.
 
-\subsection{Kết quả}
+\subsubsection*{Kết quả}
 
 Trên báo cáo Tokyo chi tiết, correct đạt R@1 \texttt{0,147140}, reverse \texttt{0,139843} và random \texttt{0,133337}; correct vượt hai corruption có ý nghĩa trên các metric được kiểm định. Macro 12-city tiếp tục cùng chiều: \texttt{0,171903}, \texttt{0,163801} và \texttt{0,164812}. Kết quả hỗ trợ mô hình khai thác thứ tự thời gian.
 
-\subsection{Phạm vi 12 thành phố}
+\subsubsection*{Phạm vi 12 thành phố}
 
-Macro correct đạt R@1/R@5/R@10/MRR \texttt{0,171903/0,327474/0,384337/0,245829}; reverse đạt \texttt{0,163801/0,323969/0,380686/0,239358}; random đạt \texttt{0,164812/0,324336/0,381848/0,240639}. Correct đứng đầu cả bốn metric. Paired significance Tokyo không tự động áp dụng cho macro; cần kiểm định phân tầng theo city nếu muốn claim significance đa thành phố.
+Macro correct đạt R@1/R@5/R@10/MRR \path{0,171903/0,327474/0,384337/0,245829}; reverse đạt \path{0,163801/0,323969/0,380686/0,239358}; random đạt \path{0,164812/0,324336/0,381848/0,240639}. Correct đứng đầu cả bốn metric. Paired significance Tokyo không tự động áp dụng cho macro; cần kiểm định phân tầng theo city nếu muốn claim significance đa thành phố.
 
-\clearpage
-\section{RQ6 --- Dual-Axis Evolution}
+
+\subsection{RQ6 --- Dual-Axis Evolution}
 
 \begin{quote}\small Tên chuẩn hóa của báo cáo RQ6. Bảng representation, trajectory-length và\end{quote}
 \begin{quote}\small paired significance đầy đủ nằm tại \href{result\_rq6.md}{result\_rq6.md}.\end{quote}
-\subsection{Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 Tiến hóa biểu diễn theo layer hay theo thời gian quan trọng hơn, và kết hợp hai trục có tạo lợi ích bổ sung hay không?
 
-\subsection{Mục tiêu}
+\subsubsection*{Mục tiêu}
 
 Tách đóng góp layer/temporal evolution và liên hệ alignment representation với ranking, calibration và độ dài trajectory.
 
-\subsection{Tiêu chí đạt}
+\subsubsection*{Tiêu chí đạt}
 
 Mọi biến thể phải dùng cùng split, candidates và seed; alignment/ngưỡng độ dài chỉ fit validation. Claim E5 tốt hơn cần paired effect có ý nghĩa sau Holm; CKA/cosine cao riêng lẻ không đủ chứng minh quality gain. RQ vẫn hoàn thành nếu các khác biệt không significant, miễn đủ ablation và uncertainty analysis.
 
-\subsection{Kết quả}
+\subsubsection*{Kết quả}
 
 Trong báo cáo Tokyo, E5 có mean ranking và CKA tốt nhất, còn E6 có NLL/ECE tốt nhất; nhiều ranking difference giữa evolution variants chưa significant sau Holm. Macro 12-city cho thấy E5 đạt R@1 \texttt{0,171903} và MRR \texttt{0,245829}, cao hơn E6 lần lượt \texttt{0,002911} và \texttt{0,002122}; E6 vẫn có NLL thấp hơn rất nhẹ. Bằng chứng ủng hộ dual-axis về ranking nhưng cần đọc cùng paired test.
 
-\subsection{Phạm vi 12 thành phố}
+\subsubsection*{Phạm vi 12 thành phố}
 
-E5 đạt R@1 \texttt{0,171903}, R@5 \texttt{0,327474}, R@10 \texttt{0,384337}, MRR \texttt{0,245829}. E6-temporal đạt tương ứng \texttt{0,168992/0,325905/0,382047/0,243706} và NLL \texttt{6,671989}, thấp hơn nhẹ E5 (\texttt{6,673658}). Summary macro không xuất CKA, cosine, trajectory-bin hoặc paired test đa thành phố; kết luận cơ chế vẫn phải đọc cùng phân tích Tokyo.
+E5 đạt R@1 \texttt{0,171903}, R@5 \texttt{0,327474}, R@10 \texttt{0,384337}, MRR \texttt{0,245829}. E6-temporal đạt tương ứng \path{0,168992/0,325905/0,382047/0,243706} và NLL \texttt{6,671989}, thấp hơn nhẹ E5 (\texttt{6,673658}). Summary macro không xuất CKA, cosine, trajectory-bin hoặc paired test đa thành phố; kết luận cơ chế vẫn phải đọc cùng phân tích Tokyo.
 
-\clearpage
-\section{RQ7 --- Phân tích Belief Memory}
 
-\subsection{1. Câu hỏi nghiên cứu}
+\subsection{RQ7 --- Phân tích Belief Memory}
+
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ7 trả lời câu hỏi: \textbf{việc duy trì belief theo chuỗi có cải thiện dự đoán địa điểm kế tiếp so với suy luận độc lập tại từng bước hay không?}
 
-Thực nghiệm được tiến hành trên \textbf{TIST2015--Tokyo}, sử dụng checkpoint \texttt{E5-dual/correct} đã đóng băng với ba seed \texttt{42, 43, 44}. Mỗi trajectory được đánh giá trên toàn bộ prefix theo thứ tự thời gian. Belief được reset khi bắt đầu trajectory mới.
+Thực nghiệm được tiến hành trên \textbf{TIST2015--Tokyo}, sử dụng checkpoint \path{E5-dual/correct} đã đóng băng với ba seed \texttt{42, 43, 44}. Mỗi trajectory được đánh giá trên toàn bộ prefix theo thứ tự thời gian. Belief được reset khi bắt đầu trajectory mới.
 
 Transition và prior chỉ được ước lượng trên tập train. Trọng số kết hợp được chọn trên validation; test không được dùng để điều chỉnh mô hình.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Xác định dạng memory nào thực sự bổ sung thông tin cho frozen E5-Dual: history frequency, recursive posterior hay transition-aware DBN; đồng thời đo đánh đổi giữa ranking và độ tin cậy xác suất.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Belief reset ở biên trajectory và mỗi query chỉ dùng prefix đã quan sát.
@@ -777,7 +777,7 @@ result vẫn là kết quả hợp lệ.
 
 \end{itemize}
 
-\subsection{2. Các biến thể}
+\subsubsection*{Các biến thể}
 
 \begin{itemize}
 \item \textbf{B0-static:} E5-dual suy luận độc lập tại mỗi bước, không duy trì belief.
@@ -792,9 +792,9 @@ tại, tương ứng với một Dynamic Bayesian Network đơn giản.
 
 \end{itemize}
 
-\subsection{3. Kết quả tổng hợp trên test}
+\subsubsection*{Kết quả tổng hợp trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -812,19 +812,19 @@ B3-dbn & 0.25, 0.25, 0.25 & \textbf{0.148607} & \textbf{0.325217} & \textbf{0.39
 \end{adjustbox}
 \end{table}
 
-\subsection{4. Phân tích kết quả}
+\subsubsection*{Phân tích kết quả}
 
-\subsubsection{4.1. History và sequential belief không vượt baseline}
+\paragraph{History và sequential belief không vượt baseline}
 
 \texttt{B1-history} và \texttt{B2-sequential} đều chọn weight bằng \texttt{0} ở cả ba seed. Vì vậy, hai biến thể này rút gọn chính xác về \texttt{B0-static}; mọi effect đều bằng 0, 95\% CI bằng \texttt{0--0} và Holm-adjusted p bằng \texttt{1}.
 
 Đây là một \textbf{negative result hợp lệ}: với biểu diễn E5-dual và cách xây dựng belief hiện tại, tần suất lịch sử và recursive posterior không cung cấp thêm thông tin hữu ích trên validation. Kết quả này không chứng minh mọi dạng sequential belief đều không hiệu quả; nó chỉ bác bỏ hai cơ chế cụ thể được kiểm tra trong protocol này.
 
-\subsubsection{4.2. DBN cải thiện rõ rệt chất lượng xếp hạng}
+\paragraph{DBN cải thiện rõ rệt chất lượng xếp hạng}
 
 \texttt{B3-dbn} chọn cùng weight \texttt{0.25} ở cả ba seed, cho thấy lựa chọn hyperparameter ổn định. So với \texttt{B0-static}, DBN đạt:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -844,11 +844,11 @@ MRR & 0.223297 & 0.232260 & +0.008963 & +4.01\% \\
 
 Các cải thiện đều có bootstrap 95\% CI không chứa 0 và Holm-adjusted \texttt{p = 0.00239976}. Do đó, first-order transition prior mang thêm tín hiệu hữu ích cho việc xếp hạng địa điểm kế tiếp ngoài thông tin đã có trong E5-dual.
 
-\subsubsection{4.3. DBN tạo ra trade-off calibration}
+\paragraph{DBN tạo ra trade-off calibration}
 
 Khả năng xếp hạng tốt hơn không đi kèm xác suất tốt hơn:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -869,7 +869,7 @@ Theo quy ước paired test, effect dương nghĩa là biến thể đứng trư
 
 Nguyên nhân hợp lý là weight được chọn bằng mục tiêu \texttt{Recall@1 + Recall@10}, không phải NLL hoặc ECE. Transition prior làm thay đổi thứ hạng đúng hướng nhưng đồng thời làm phân phối xác suất quá sắc hoặc bị lệch.
 
-\subsection{5. Kết luận RQ7}
+\subsubsection*{Kết luận RQ7}
 
 Trên \textbf{TIST2015--Tokyo}, belief memory chỉ mang lại lợi ích khi được biểu diễn bằng transition-aware DBN. First-order DBN cải thiện nhất quán và có ý nghĩa thống kê toàn bộ ranking metrics, trong khi history-frequency và recursive posterior memory bị validation loại bỏ. Tuy nhiên, DBN gây suy giảm đáng kể về calibration, tạo ra trade-off giữa chất lượng xếp hạng và độ tin cậy xác suất.
 
@@ -878,7 +878,7 @@ Claim phù hợp:
 \begin{quote}\small Trên TIST2015--Tokyo, first-order DBN fusion cải thiện có ý nghĩa thống kê khả\end{quote}
 \begin{quote}\small năng xếp hạng next-location so với independent-step inference, nhưng làm suy\end{quote}
 \begin{quote}\small giảm probabilistic calibration.\end{quote}
-\subsection{6. Giới hạn và công việc tiếp theo}
+\subsubsection*{Giới hạn và công việc tiếp theo}
 
 \begin{itemize}
 \item Kết quả hiện chỉ áp dụng cho Tokyo; chưa được phép suy diễn thành kết luận cho
@@ -898,7 +898,7 @@ cần gọi LLM thay vì gọi ở mọi query.
 
 \end{itemize}
 
-\subsection{7. Trạng thái publication gate}
+\subsubsection*{Trạng thái publication gate}
 
 \begin{itemize}
 \item Dataset/city: \texttt{TIST2015--Tokyo}.
@@ -910,9 +910,9 @@ cần gọi LLM thay vì gọi ở mọi query.
 \item TIST2015 12-city artifact gate --- \textbf{ready-internal-gpu-contention}.
 \end{itemize}
 
-\subsection{8. Kết quả mở rộng TIST2015 --- 12 thành phố}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -930,10 +930,10 @@ B3-dbn & 0,167185 $\pm$ 0,000984 & 0,341297 $\pm$ 0,001190 & 0,406880 $\pm$ 0,00
 
 B3 cải thiện toàn bộ ranking macro nhưng làm xấu NLL, Brier và ECE, nhất quán với trade-off Tokyo. Paired p-value Tokyo không chứng minh significance 12-city.
 
-\clearpage
-\section{RQ8 --- Phân tích Uncertainty-aware LLM Routing}
 
-\subsection{1. Câu hỏi nghiên cứu và protocol}
+\subsection{RQ8 --- Phân tích Uncertainty-aware LLM Routing}
+
+\subsubsection*{Câu hỏi nghiên cứu và protocol}
 
 RQ8 kiểm tra liệu có thể giảm số lần gọi LLM nhưng vẫn giữ chất lượng dự đoán gần với chính sách gọi LLM cho mọi query hay không.
 
@@ -951,11 +951,11 @@ Các policy gồm:
 
 Never, Always, Entropy và Margin là deterministic và chỉ được tính một run. Random được đánh giá bằng 50 permutation seeds; không dùng các bản sao deterministic để tạo pseudo-replication.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Tìm điểm vận hành giảm chi phí LLM mà vẫn bảo toàn hoặc cải thiện chất lượng, và kiểm tra uncertainty có tốt hơn lựa chọn ngẫu nhiên cùng ngân sách hay không.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Threshold chỉ fit validation; deterministic policy tính một run, random control
@@ -970,9 +970,9 @@ kết luận phải là negative result, không được coi giảm call rate đ
 
 \end{itemize}
 
-\subsection{2. Kết quả tại primary budget}
+\subsubsection*{Kết quả tại primary budget}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -991,9 +991,9 @@ Random-budget-matched & 50 & 0.124200 & 0.253500 & 0.305000 & 0.187044 & 0.14500
 \end{adjustbox}
 \end{table}
 
-\subsection{3. Threshold được chọn trên validation}
+\subsubsection*{Threshold được chọn trên validation}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1011,11 +1011,11 @@ Margin & 1.3394625e-06 & 0.000000 \\
 
 Entropy dùng 15\% call rate trên validation và 14.5\% trên test, cho thấy budget được chuyển sang test tương đối ổn định. Margin bị validation loại bỏ hoàn toàn và rút gọn về Never.
 
-Giá trị entropy tuyệt đối khá lớn vì phân phối trải trên candidate space của Tokyo. Khi mở rộng nhiều thành phố có số POI khác nhau, nên dùng normalized entropy \texttt{H(p)/log(K)} hoặc fit threshold riêng cho từng city.
+Giá trị entropy tuyệt đối khá lớn vì phân phối trải trên candidate space của Tokyo. Khi mở rộng nhiều thành phố có số POI khác nhau, nên dùng normalized entropy \path{H(p)/log(K)} hoặc fit threshold riêng cho từng city.
 
-\subsection{4. Phân tích quality và chi phí}
+\subsubsection*{Phân tích quality và chi phí}
 
-\subsubsection{4.1. Always-LLM không cải thiện nhất quán}
+\paragraph{Always-LLM không cải thiện nhất quán}
 
 So với Never, Always tăng Recall@5 từ \texttt{0.250} lên \texttt{0.280} và MRR từ \texttt{0.186565} lên \texttt{0.193732}. Tuy nhiên Recall@1 giảm từ \texttt{0.125} xuống \texttt{0.120}, còn Recall@10 không đổi ở \texttt{0.305}.
 
@@ -1023,7 +1023,7 @@ Recall@10 không đổi vì LLM chỉ rerank top-10 do predictor cung cấp. N�
 
 Sau Holm correction, không metric nào của Always khác Never có ý nghĩa thống kê. Recall@5 có effect \texttt{+0.030} và bootstrap CI không chứa 0, nhưng Holm \texttt{p = 0.49645}; do đó chưa đủ bằng chứng cho claim Always tốt hơn Never.
 
-\subsubsection{4.2. Entropy tiết kiệm chi phí nhưng không tăng chất lượng}
+\paragraph{Entropy tiết kiệm chi phí nhưng không tăng chất lượng}
 
 Entropy chỉ gọi LLM trên 14.5\% test queries. So với Always:
 
@@ -1035,11 +1035,11 @@ Entropy chỉ gọi LLM trên 14.5\% test queries. So với Always:
 
 Tuy nhiên, Entropy và Never có Recall@1/5/10 giống hệt nhau. MRR chỉ tăng \texttt{0.000417}, với CI \texttt{0--0.001250} và Holm \texttt{p = 1}. Entropy vì vậy giảm chi phí nhưng không tạo cải thiện quality có ý nghĩa thống kê.
 
-\subsubsection{4.3. Random control tốt hơn Entropy tại Recall@5}
+\paragraph{Random control tốt hơn Entropy tại Recall@5}
 
 Entropy và Random có cùng call rate \texttt{0.145}. Trung bình qua 50 random permutations:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1061,9 +1061,9 @@ Tại Recall@5, CI của effect Entropy--Random là \texttt{−0.004700 -- −0.
 
 Kết quả này bác bỏ giả thuyết rằng entropy hiện tại định tuyến LLM tốt hơn lựa chọn ngẫu nhiên cùng budget.
 
-\subsection{5. Budget sweep}
+\subsubsection*{Budget sweep}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1085,11 +1085,11 @@ Budget tối đa & Router & R@1 & R@5 & MRR & Call rate thực tế & Tokens/que
 
 Ở budget 10\%, validation chọn không gọi LLM. Tăng budget từ 25\% lên 50\% không làm call rate vượt 14.5\%, vì validation không tìm thấy thêm vùng uncertainty có lợi theo objective hiện tại. Do đó vấn đề không phải thiếu budget mà là score routing chưa dự báo được lợi ích thực tế của LLM.
 
-\subsection{6. Oracle-gain upper bound}
+\subsubsection*{Oracle-gain upper bound}
 
 Oracle chỉ gọi LLM trên query có positive realized LLM gain và đạt:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1112,7 +1112,7 @@ Khoảng cách lớn giữa Oracle và Entropy chứng minh LLM có ích trên m
 
 Oracle chỉ là upper bound hậu nghiệm vì dùng test outcome để biết query nào có gain; nó không phải policy triển khai và không được báo cáo như mô hình thực tế.
 
-\subsection{7. Tóm tắt paired significance}
+\subsubsection*{Tóm tắt paired significance}
 
 \begin{itemize}
 \item Entropy vs Never: không metric nào significant.
@@ -1125,7 +1125,7 @@ không significant.
 
 Holm correction được áp dụng trên toàn bộ 16 phép kiểm định. Positive effect nghĩa là policy đứng trước tốt hơn policy đứng sau.
 
-\subsection{8. Kết luận RQ8}
+\subsubsection*{Kết luận RQ8}
 
 Claim an toàn:
 
@@ -1136,7 +1136,7 @@ Claim an toàn:
 \begin{quote}\small call rate.\end{quote}
 Kết quả hiện tại là negative result cho Entropy và Margin, nhưng là positive diagnostic cho hướng gain-aware routing. Không nên claim uncertainty routing hiện tại tốt hơn random, Always tốt hơn Never, hoặc kết quả đại diện cho toàn bộ Tokyo/12-city.
 
-\subsection{9. Hướng phát triển}
+\subsubsection*{Hướng phát triển}
 
 \begin{enumerate}
 \item Học trực tiếp xác suất \texttt{LLM gain > 0} trên validation thay vì dùng entropy
@@ -1151,7 +1151,7 @@ validation/test protocol đã khóa.
 
 \end{enumerate}
 
-\subsection{10. Publication gate}
+\subsubsection*{Publication gate}
 
 \begin{itemize}
 \item City: \texttt{Tokyo} --- hoàn thành bounded run.
@@ -1167,9 +1167,9 @@ validation/test protocol đã khóa.
 \item TIST2015 12-city bounded gate --- \textbf{ready-internal}.
 \end{itemize}
 
-\subsection{11. Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1190,20 +1190,20 @@ random-budget-matched & 0,177431 & 0,335417 & 0,393452 & 0,252029 \\
 
 Không router nào vượt \texttt{never} đồng thời trên các metric macro; \texttt{always} còn giảm R@1 và MRR. Đây là Qwen2:7b \texttt{limit=200}, không phải full-query. Chi phí và call-rate chi tiết vẫn được đọc từ báo cáo bounded Tokyo.
 
-\clearpage
-\section{RQ9 --- Phân tích Semantic Knowledge Verification}
 
-\subsection{1. Câu hỏi nghiên cứu}
+\subsection{RQ9 --- Phân tích Semantic Knowledge Verification}
+
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ9 kiểm tra personal memory và context/world knowledge có thực sự ảnh hưởng đến dự đoán next-location hay không. Thực nghiệm sử dụng one-axis corruption: memory variants luôn giữ context thật, còn context variants luôn giữ memory thật.
 
 Đây là bounded experiment trên 200 test queries của \texttt{TIST2015--Tokyo}, sử dụng \texttt{qwen2:7b} và cùng Neural-CGM top-10 candidate set. Mỗi variant có LLM cache riêng; corruption deterministic và test không được dùng để tuning.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Kiểm tra causal sensitivity của reranker đối với personal memory và semantic context, đồng thời tách predictive utility thật khỏi format failure hoặc thay đổi độ dài prompt.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Chỉ phá một trục mỗi lần; trục còn lại, candidate set và query phải giữ nguyên.
@@ -1216,9 +1216,9 @@ chứa 0 hoặc corruption tốt hơn true.
 
 \end{itemize}
 
-\subsection{2. Kết quả tổng thể}
+\subsubsection*{Kết quả tổng thể}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1241,7 +1241,7 @@ context-none & 0.130000 & 0.250000 & 0.305000 & 0.191982 & 0.095000 & 1160.17 & 
 
 Recall@10 luôn bằng \texttt{0.305} vì mọi variant chỉ rerank cùng top-10 candidate set. RQ9 vì vậy đo semantic reranking, không đo candidate recall.
 
-\subsection{3. Kết quả paired significance ban đầu}
+\subsubsection*{Kết quả paired significance ban đầu}
 
 Không có corruption nào khác \texttt{memory-true} có ý nghĩa thống kê trên Recall@1, Recall@5, Recall@10 hoặc MRR. Tất cả Holm-adjusted p đều bằng \texttt{1}.
 
@@ -1258,11 +1258,11 @@ Các xu hướng mean cũng không nhất quán:
 
 Do đó chưa có bằng chứng rằng personal memory hoặc context/world prompt hiện tại cải thiện ranking.
 
-\subsection{4. Invalid-output confound}
+\subsubsection*{Invalid-output confound}
 
 Invalid-output rate khác nhau mạnh giữa các variant:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1292,11 +1292,11 @@ Các prompt ngắn như memory-none/context-none tạo ít malformed/incomplete 
 
 Tokens/query của memory-none chỉ \texttt{581.91}, thấp hơn nhiều so với \texttt{1265.41} của memory-true. Prompt length vì vậy là một confound thực sự, không chỉ là metric hiệu năng phụ.
 
-\subsection{5. Jointly-valid paired analysis}
+\subsubsection*{Jointly-valid paired analysis}
 
 Số query mà cả true và corruption đều sinh output hợp lệ nằm trong khoảng \texttt{133--156}:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1318,11 +1318,11 @@ true vs context-none & 156 & −0.006410 & +0.006410 & −0.002671 & Không sign
 
 Tất cả jointly-valid Holm p đều bằng \texttt{1}. Việc loại bỏ output lỗi không làm xuất hiện semantic gain bị che khuất. Negative result vì vậy mạnh hơn phân tích all-query: với các output hợp lệ, true memory/context vẫn không vượt corruption.
 
-\subsection{6. Kiểm định invalid-output rate}
+\subsubsection*{Kiểm định invalid-output rate}
 
 Positive effect nghĩa là true có invalid rate thấp hơn corruption. Hai khác biệt có ý nghĩa thống kê đều mang dấu âm:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1344,9 +1344,9 @@ true vs context-none & \textbf{−0.110} & \textbf{−0.160--−0.065} & \textbf
 
 Loại bỏ memory giảm invalid rate 12.5 điểm phần trăm; loại bỏ context giảm 11 điểm phần trăm. Cả hai đều significant sau Holm correction. Điều này xác nhận prompt length/complexity gây format-reliability cost thực sự.
 
-\subsection{7. Ranking sensitivity}
+\subsubsection*{Ranking sensitivity}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1368,7 +1368,7 @@ context-none & 0.110 & 0.250 & 0.905515 \\
 
 Memory corruption làm ranking thay đổi nhiều hơn context corruption. Như vậy LLM không hoàn toàn bỏ qua semantic inputs: nó nhạy với thay đổi prompt. Tuy nhiên, các thay đổi ranking không liên hệ ổn định với ground-truth quality, nên sensitivity chưa chuyển thành useful semantic contribution.
 
-\subsection{8. Kết luận RQ9}
+\subsubsection*{Kết luận RQ9}
 
 Claim an toàn:
 
@@ -1380,7 +1380,7 @@ Claim an toàn:
 \begin{quote}\small nhưng chưa chứng minh được predictive utility.\end{quote}
 Không nên claim memory/context vô dụng nói chung, vì kết quả chỉ áp dụng cho prompt, model, candidate set và bounded Tokyo protocol hiện tại.
 
-\subsection{9. Hướng phát triển}
+\subsubsection*{Hướng phát triển}
 
 \begin{enumerate}
 \item Dùng constrained JSON/schema decoding để giảm invalid-output rate.
@@ -1396,7 +1396,7 @@ rate vừa vượt corruption controls.
 
 \end{enumerate}
 
-\subsection{10. Publication gate}
+\subsubsection*{Publication gate}
 
 \begin{itemize}
 \item City: \texttt{Tokyo} --- bounded run hoàn thành.
@@ -1412,9 +1412,9 @@ rate vừa vượt corruption controls.
 \item TIST2015 12-city bounded gate --- \textbf{ready-internal}.
 \end{itemize}
 
-\subsection{11. Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố (bounded)}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1437,11 +1437,11 @@ context-none & 0,179057 & 0,334084 & 0,393452 & 0,254183 \\
 
 Random-user và bỏ memory gây suy giảm rõ nhất, nhưng context-random-poi lại có R@1/MRR cao hơn memory-true. Macro 12-city vì vậy chưa hỗ trợ claim semantic nhất quán; cần paired analysis theo city/query trước kết luận nhân quả.
 
-\clearpage
-\section{RQ10 --- Độ bền theo kiến trúc teacher}
+
+\subsection{RQ10 --- Độ bền theo kiến trúc teacher}
 
 \begin{quote}\small Teacher và student dùng cùng split, candidate set và seed; mọi lựa chọn checkpoint chỉ dùng validation. Kết quả dưới đây là trung bình của các seed 42, 43 và 44 trên test TIST2015--Tokyo.\end{quote}
-\subsection{Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ10 kiểm tra liệu lợi ích của distillation có phụ thuộc vào một kiến trúc teacher cụ thể hay không. Thí nghiệm giữ cố định kiến trúc student GRU, dữ liệu, candidate space, split và seed; yếu tố được thay đổi là teacher GRU hoặc Transformer.
 
@@ -1451,11 +1451,11 @@ RQ10 kiểm tra liệu lợi ích của distillation có phụ thuộc vào mộ
 \item \texttt{transformer}: cùng student đó nhận các tín hiệu tương ứng từ Transformer teacher.
 \end{itemize}
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Đánh giá tính bền vững của distillation trước thay đổi kiến trúc teacher và xác định teacher nào tạo student cân bằng nhất giữa ranking và calibration.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Chỉ thay teacher; student architecture, split, candidates và seed phải giữ nguyên.
@@ -1468,9 +1468,9 @@ Holm không significant; calibration phải được xem cùng ranking.
 
 \end{itemize}
 
-\subsection{Chất lượng teacher trên test}
+\subsubsection*{Chất lượng teacher trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1488,9 +1488,9 @@ transformer & 0.150417 & 0.302077 & 0.362089 & 0.222782 & 9.466769 & 0.949876 & 
 
 Transformer teacher có ranking tốt hơn GRU teacher: R@1 tăng 0.006779, R@10 tăng 0.017198 và MRR tăng 0.009599. Tuy nhiên, xác suất của Transformer teacher được hiệu chỉnh kém hơn: NLL tăng 0.667486 và ECE tăng từ 0.035296 lên 0.070451. Vì bảng này chưa có paired test trực tiếp giữa hai teacher, các chênh lệch trên chỉ được diễn giải mô tả.
 
-\subsection{Student sau distillation trên test}
+\subsubsection*{Student sau distillation trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1507,7 +1507,7 @@ transformer & 0.148623 & 0.308804 & 0.373680 & 0.224638 & 7.962563 & 0.949805 & 
 \end{adjustbox}
 \end{table}
 
-\subsubsection{So với student không distillation}
+\paragraph{So với student không distillation}
 
 GRU distillation cải thiện tuyệt đối R@1 thêm 0.013696, R@5 thêm 0.034206, R@10 thêm 0.045384 và MRR thêm 0.023479. Tương ứng, mức tăng tương đối xấp xỉ 10.24\%, 12.55\%, 13.94\% và 11.76\%. NLL giảm 1.635370, tương đương khoảng 17.75\%.
 
@@ -1515,15 +1515,15 @@ Transformer distillation cải thiện tuyệt đối R@1 thêm 0.014835, R@5 th
 
 Như vậy, cả hai teacher đều truyền được tín hiệu hữu ích sang cùng một student. Kết quả này cho thấy hiệu quả distillation không chỉ xuất hiện với GRU teacher.
 
-\subsubsection{GRU teacher so với Transformer teacher}
+\paragraph{GRU teacher so với Transformer teacher}
 
 Student distillation từ Transformer nhỉnh hơn student distillation từ GRU về ranking: R@1 tăng 0.001138, R@5 tăng 0.002070, R@10 tăng 0.002829 và MRR tăng 0.001431. Tuy nhiên, các khác biệt ranking này không đạt ý nghĩa thống kê sau Holm correction.
 
 Ngược lại, student từ GRU teacher có calibration tốt hơn rõ rệt. So với GRU, student từ Transformer có NLL cao hơn 0.386982, Brier cao hơn 0.005333 và ECE cao hơn 0.024052. Paired test xác nhận khác biệt NLL và Brier có ý nghĩa thống kê. Do đó, GRU là lựa chọn cân bằng hơn nếu hệ thống cần cả ranking và độ tin cậy xác suất.
 
-\subsection{Paired significance}
+\subsubsection*{Paired significance}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1557,13 +1557,13 @@ transformer-vs-gru & brier & -0.005333 & -0.006658---0.004000 & 0.00179982 & yes
 
 Positive effect nghĩa là student đứng trước tốt hơn; với NLL và Brier, dấu đã được đảo để giữ cùng cách diễn giải. Holm correction được áp dụng trên toàn bộ các phép kiểm định trong bảng. ECE không được paired test vì metric này không phân rã trực tiếp theo từng query trong artifact kiểm định.
 
-\subsection{Kết luận RQ10}
+\subsubsection*{Kết luận RQ10}
 
 Kết quả ủng hộ kết luận rằng cơ chế distillation bền vững đối với hai kiến trúc teacher đã kiểm tra. Cả GRU và Transformer đều cải thiện có ý nghĩa toàn bộ metric ranking, NLL và Brier so với student chỉ học cross-entropy. Transformer cho ranking trung bình cao hơn một lượng nhỏ nhưng chưa có bằng chứng thống kê rằng nó vượt GRU về ranking. GRU tạo student có calibration tốt hơn đáng kể và hiện là lựa chọn thực dụng hơn.
 
 Không được diễn giải kết quả không significant giữa hai student thành bằng chứng hai kiến trúc tương đương. Muốn khẳng định equivalence cần đặt trước biên tương đương và thực hiện equivalence hoặc non-inferiority test.
 
-\subsection{Phạm vi và hạn chế}
+\subsubsection*{Phạm vi và hạn chế}
 
 \begin{itemize}
 \item Kết luận hiện chỉ áp dụng cho GRU và Transformer, trên TIST2015--Tokyo với seed 42--44.
@@ -1573,13 +1573,13 @@ Không được diễn giải kết quả không significant giữa hai student 
 \item Hai teacher dùng cùng chiều biểu diễn nhưng không nhất thiết có cùng số tham số; vì vậy đây là kiểm tra robustness theo kiến trúc, không phải so sánh capacity-matched tuyệt đối.
 \end{itemize}
 
-\subsection{Publication gate}
+\subsubsection*{Publication gate}
 
 RQ10 đạt gate nội bộ cho Tokyo và đủ artifact macro 12-city. Tuyên bố vẫn chỉ bao phủ hai teacher GRU/Transformer, không phải mọi kiến trúc teacher.
 
-\subsection{Kết quả mở rộng TIST2015 --- 12 thành phố}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1598,19 +1598,19 @@ transformer & 0,167144 $\pm$ 0,002947 & 0,325721 $\pm$ 0,000215 & 0,379618 $\pm$
 
 Cả hai teacher đều tạo student tốt hơn \texttt{none}; student distill từ GRU đứng đầu mọi metric macro trong bảng. Chưa có paired significance đa thành phố, nên đây là bằng chứng mô tả bổ sung cho paired result Tokyo.
 
-\clearpage
-\section{RQ11 --- Calibration đa mục tiêu}
+
+\subsection{RQ11 --- Calibration đa mục tiêu}
 
 \begin{quote}\small Identity và temperature tối ưu NLL/Brier/ECE đều được chọn trên validation; test không dùng để tuning. Hai protocol được báo cáo riêng.\end{quote}
-\subsection{1. Câu hỏi nghiên cứu và protocol}
+\subsubsection*{Câu hỏi nghiên cứu và protocol}
 
 RQ11 kiểm tra ảnh hưởng của distillation và Bayesian update tới NLL, Brier và ECE, đồng thời xác định liệu một temperature duy nhất có tối ưu được mọi khía cạnh calibration hay không.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Đo và sửa miscalibration theo từng mục tiêu xác suất, đồng thời làm rõ trade-off giữa NLL, Brier và ECE thay vì giả định một temperature tối ưu tất cả.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Temperature chỉ fit validation và áp dụng một lần lên test.
@@ -1634,9 +1634,9 @@ reliability analysis; trade-off âm phải được báo cáo đầy đủ.
 
 Temperature scaling là phép biến đổi đơn điệu nên giữ nguyên ranking, R@k và MRR.
 
-\subsection{2. Distillation --- last-query}
+\subsubsection*{Distillation --- last-query}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1653,9 +1653,9 @@ transformer & 1.7500 & 7.962563$\rightarrow$7.160651 & 1.1000 & 0.949805$\righta
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Trade-off trên test}
+\paragraph{Trade-off trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1681,9 +1681,9 @@ transformer & ece & 7.722951 & 0.944666 & 0.016187 & 0.016613 & -0.015606 \\
 \end{adjustbox}
 \end{table}
 
-Reliability diagram identity--ECE: \texttt{results/beliefmove-evo/aggregated/rq11\_distillation\_reliability.svg}.
+Reliability diagram identity--ECE: \path{results/beliefmove-evo/aggregated/rq11_distillation_reliability.svg}.
 
-\subsubsection{Nhận xét}
+\paragraph{Nhận xét}
 
 Calibration đúng objective cải thiện metric mục tiêu ở cả ba biến thể. NLL-optimal giảm NLL mạnh nhưng làm Brier và ECE xấu hơn, tái khẳng định NLL không đại diện đầy đủ cho top-1 calibration. Brier-optimal cho kết quả cân bằng hơn: nó đồng thời giảm Brier và giảm đáng kể ECE trên test.
 
@@ -1691,9 +1691,9 @@ Với GRU, temperature ECE được chọn trên validation cho ECE test 0.01943
 
 Sau calibration theo metric tương ứng, GRU và Transformer đều tốt hơn \texttt{none} có ý nghĩa về NLL/Brier. Tuy nhiên, ECE-optimal của \texttt{none} lại thấp hơn GRU và Transformer trên test; vì thế distillation cải thiện scoring rules nhưng không tự động đảm bảo ECE thấp nhất.
 
-\subsection{3. Bayesian --- all-prefix}
+\subsubsection*{Bayesian --- all-prefix}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1709,9 +1709,9 @@ B3-dbn & 1.7500 & 7.487550$\rightarrow$6.430621 & 1.5000 & 0.975386$\rightarrow$
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Trade-off trên test}
+\paragraph{Trade-off trên test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1733,19 +1733,19 @@ B3-dbn & ece & 6.525716 & 0.942895 & 0.019308 & 0.018314 & 0.018314 \\
 \end{adjustbox}
 \end{table}
 
-Reliability diagram identity--ECE: \texttt{results/beliefmove-evo/aggregated/rq11\_bayesian\_reliability.svg}.
+Reliability diagram identity--ECE: \path{results/beliefmove-evo/aggregated/rq11_bayesian_reliability.svg}.
 
-\subsubsection{Nhận xét}
+\paragraph{Nhận xét}
 
 B3-DBN ban đầu bị under-confident mạnh, thể hiện qua confidence gap -0.142256 và ECE 0.142256. Brier/ECE-optimal calibration giảm ECE xuống 0.019308 và Brier xuống 0.942895. So với identity, mức giảm ECE là 0.122948, tương đương khoảng 86.43\%.
 
 Sau calibration theo metric tương ứng, B3 tốt hơn B0 có ý nghĩa về NLL và Brier. Tuy nhiên, ECE của B3 vẫn cao hơn B0 0.003124; bootstrap CI không chứa 0. Kết quả cho thấy Bayesian update cải thiện scoring rules sau calibration nhưng B0 vẫn có lợi thế nhỏ về top-1 ECE.
 
-\subsection{4. Paired NLL/Brier tests}
+\subsubsection*{Paired NLL/Brier tests}
 
 Positive effect nghĩa là biến thể/calibration đứng trước tốt hơn; dấu của NLL và Brier đã được quy đổi để giá trị dương biểu thị metric thấp hơn.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1777,9 +1777,9 @@ model & bayesian & B3-dbn-vs-B0-static & brier & brier & 0.003297 & 0.003042--0.
 
 Toàn bộ calibration theo NLL/Brier đều cải thiện metric mục tiêu có ý nghĩa sau Holm correction. Các so sánh model cũng cho thấy GRU, Transformer và B3 tốt hơn đối chứng tương ứng về NLL/Brier sau khi mỗi model được calibrate theo cùng objective.
 
-\subsection{5. Bootstrap ECE tests}
+\subsubsection*{Bootstrap ECE tests}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1803,7 +1803,7 @@ model & bayesian & B3-dbn-vs-B0-static & -0.003124 & -0.005201---0.001262 \\
 
 ECE-optimal calibration cải thiện ECE cho cả năm biến thể và mọi CI đều không chứa 0. Trong so sánh trực tiếp sau ECE calibration, dấu âm cho biết \texttt{none} tốt hơn GRU/Transformer và B0 tốt hơn B3 về ECE.
 
-\subsection{6. Kết luận RQ11}
+\subsubsection*{Kết luận RQ11}
 
 Kết quả chứng minh calibration phải được đánh giá theo đúng objective. NLL-optimal temperature cải thiện NLL nhưng có thể làm Brier và ECE xấu đi; Brier/ECE-optimal temperature tạo calibration cân bằng hơn. Distillation và B3-DBN duy trì lợi thế rõ ràng về NLL/Brier sau calibration, nhưng không đạt ECE thấp nhất so với đối chứng.
 
@@ -1811,7 +1811,7 @@ Kết luận được phép sử dụng là: \textbf{validation-selected, object
 
 Không được tuyên bố một temperature duy nhất tối ưu mọi calibration metric hoặc distillation/Bayesian update luôn cải thiện ECE.
 
-\subsection{7. Hạn chế}
+\subsubsection*{Hạn chế}
 
 \begin{itemize}
 \item Temperature grid rời rạc; kết quả phản ánh các giá trị trong grid đã khai báo.
@@ -1821,13 +1821,13 @@ Không được tuyên bố một temperature duy nhất tối ưu mọi calibra
 \item Phân tích calibration đa mục tiêu chi tiết áp dụng cho Tokyo; snapshot macro 12-city hiện chỉ xuất các hàng identity/reference.
 \end{itemize}
 
-\subsection{8. Publication gate}
+\subsubsection*{Publication gate}
 
 RQ11 đạt gate nội bộ cho Tokyo. Artifact 12-city đã đủ, nhưng summary hiện tại chưa xuất đầy đủ các hàng post-calibration nên chưa đạt gate báo cáo calibration đa mục tiêu 12-city.
 
-\subsection{9. Snapshot 12 thành phố hiện có}
+\subsubsection*{Snapshot 12 thành phố hiện có}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1845,19 +1845,19 @@ B3-dbn identity & 0,167185 $\pm$ 0,000984 & 0,341297 $\pm$ 0,001190 & 0,406880 $
 
 Hai hàng này là reference trước calibration. Cần aggregate các hàng post-calibration theo từng objective trước khi đưa ra kết luận RQ11 đa thành phố.
 
-\clearpage
-\section{RQ12 --- Đánh đổi giữa độ chính xác và hiệu quả}
+
+\subsection{RQ12 --- Đánh đổi giữa độ chính xác và hiệu quả}
 
 \begin{quote}\small Batch-1 và batch-256 được báo cáo riêng. Neural/Bayesian dùng warm-up và CUDA synchronization; LLM latency lấy từ live cache-generation của RQ8 và được ghi nhãn bounded.\end{quote}
-\subsection{Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 BeliefMove-Evo đạt đánh đổi accuracy--latency--throughput--memory như thế nào so với teacher, CE student, Bayesian fusion và LLM routing?
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Xác định điểm vận hành thực tế cho single-request và batch inference, đồng thời tách chi phí online khỏi training/cache construction ngoại tuyến.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Benchmark có warm-up, CUDA synchronization, cùng hardware và timing harness.
@@ -1869,12 +1869,12 @@ vượt về quality, latency và memory; không chọn chỉ dựa trên một 
 \item RQ hoàn thành nội bộ khi đủ artifact, nhưng chỉ đạt publication gate khi GPU sạch.
 \end{itemize}
 
-\subsection{1. Batch-1 --- độ trễ single-request}
+\subsubsection*{Batch-1 --- độ trễ single-request}
 
-\subsubsection{Neural --- last-query}
+\paragraph{Neural --- last-query}
 
 \begin{quote}\small Timing dùng mẫu xác định 2.000/19.324 query; chất lượng lấy từ full frozen test. Timing, quality và memory là mean $\pm$ std qua ba seed 42--44.\end{quote}
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1893,10 +1893,10 @@ student-transformer & 0.148623 $\pm$ 0.002627 & 0.308804 $\pm$ 0.002957 & 0.3736
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Bayesian --- all-prefix}
+\paragraph{Bayesian --- all-prefix}
 
 \begin{quote}\small Timing dùng mẫu xác định 2.000/94.587 query all-prefix; chất lượng lấy từ full frozen test. Không so trực tiếp trị tuyệt đối với Neural last-query.\end{quote}
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1912,12 +1912,12 @@ B3-dbn & 0.148607 $\pm$ 0.000749 & 0.325217 $\pm$ 0.000270 & 0.396834 $\pm$ 0.00
 \end{adjustbox}
 \end{table}
 
-\subsection{2. Batch-256 --- throughput}
+\subsubsection*{Batch-256 --- throughput}
 
-\subsubsection{Neural --- last-query}
+\paragraph{Neural --- last-query}
 
 \begin{quote}\small Timing chạy toàn bộ 19.324 query; chất lượng lấy từ full frozen test.\end{quote}
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1936,10 +1936,10 @@ student-transformer & 0.148623 $\pm$ 0.002627 & 0.308804 $\pm$ 0.002957 & 0.3736
 \end{adjustbox}
 \end{table}
 
-\subsubsection{Bayesian --- all-prefix}
+\paragraph{Bayesian --- all-prefix}
 
 \begin{quote}\small Timing chạy toàn bộ 94.587 query all-prefix; không so trực tiếp trị tuyệt đối với Neural last-query.\end{quote}
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1955,10 +1955,10 @@ B3-dbn & 0.148607 $\pm$ 0.000749 & 0.325217 $\pm$ 0.000270 & 0.396834 $\pm$ 0.00
 \end{adjustbox}
 \end{table}
 
-\subsection{3. LLM routing --- bounded Tokyo limit=200}
+\subsubsection*{LLM routing --- bounded Tokyo limit=200}
 
 \begin{quote}\small Latency lấy từ live Ollama cache-generation, không cùng timing harness với PyTorch.\end{quote}
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -1976,25 +1976,25 @@ random-budget-matched & 0.124200 & 0.253500 & 0.305000 & 0.187044 & 0.145000 & 0
 \end{adjustbox}
 \end{table}
 
-\subsection{4. Phân tích kết quả}
+\subsubsection*{Phân tích kết quả}
 
-\subsubsection{Hiệu quả của distillation}
+\paragraph{Hiệu quả của distillation}
 
 Hai student distillation có 8.619.774 tham số, ít hơn teacher GRU khoảng 17,2\% và teacher Transformer khoảng 19,7\%. \texttt{student-transformer} đạt chất lượng tốt nhất trong nhóm student với R@10 = 0,373680 và MRR = 0,224638. \texttt{student-gru} đạt throughput batch-256 cao nhất, khoảng 150.472 query/s. Điều này cho thấy distillation cải thiện chất lượng so với \texttt{student-none} mà không tăng kích thước hoặc chi phí inference của student.
 
 Ở single-request, các student nằm quanh 1 ms/query. Teacher Transformer chậm nhất, 1,8412 ms/query, trong khi teacher GRU và các student gần nhau hơn. Vì \texttt{student-gru} và \texttt{student-transformer} có cùng kiến trúc inference, khác biệt latency nhỏ giữa chúng chủ yếu phản ánh nhiễu hệ thống thay vì khác biệt mô hình.
 
-\subsubsection{Chi phí của Bayesian belief}
+\paragraph{Chi phí của Bayesian belief}
 
 So với B0-static, B3-dbn tăng R@1 từ 0,141972 lên 0,148607, R@10 từ 0,383372 lên 0,396834 và MRR từ 0,223297 lên 0,232260. Đổi lại, single-request latency tăng từ 1,3272 lên 2,7517 ms/query, còn throughput batch-256 giảm từ khoảng 2.548 xuống 580 query/s.
 
-Nút thắt chính không nằm ở neural forward mà ở \texttt{Post-processing/Fusion}: với batch-256, B3-dbn dùng khoảng 811,680 giây qua năm repeat, so với 181,453 giây của B0-static. Vì vậy, nếu triển khai production, tối ưu vector hóa hoặc chuyển Bayesian fusion khỏi vòng lặp Python là ưu tiên quan trọng.
+Nút thắt chính không nằm ở neural forward mà ở \path{Post-processing/Fusion}: với batch-256, B3-dbn dùng khoảng 811,680 giây qua năm repeat, so với 181,453 giây của B0-static. Vì vậy, nếu triển khai production, tối ưu vector hóa hoặc chuyển Bayesian fusion khỏi vòng lặp Python là ưu tiên quan trọng.
 
-\subsubsection{Chi phí của LLM}
+\paragraph{Chi phí của LLM}
 
 LLM routing chậm hơn neural/Bayesian nhiều bậc độ lớn. Policy \texttt{entropy} giảm call rate xuống 14,5\% và còn khoảng 141 token/query, nhưng không cải thiện R@1/R@5 so với \texttt{never} trong bounded experiment này. \texttt{always} tăng MRR và R@5 nhưng tốn khoảng 2,82 giây/query. Do RQ8 chỉ có 200 query, các con số này chỉ minh họa trade-off chi phí và chưa đủ để kết luận tổng quát.
 
-\subsection{5. Kết luận RQ12}
+\subsubsection*{Kết luận RQ12}
 
 \begin{itemize}
 \item Distillation tạo điểm vận hành tốt nhất: student nhỏ hơn teacher, inference nhanh và chất lượng cao hơn student chỉ học cross-entropy.
@@ -2003,7 +2003,7 @@ LLM routing chậm hơn neural/Bayesian nhiều bậc độ lớn. Policy \textt
 \item LLM chỉ nên được gọi có chọn lọc, nhưng entropy router hiện chưa chứng minh được lợi ích chất lượng trên bounded RQ8.
 \end{itemize}
 
-\subsection{6. Protocol gate và giới hạn}
+\subsubsection*{Protocol gate và giới hạn}
 
 \begin{itemize}
 \item Batch-1 đo single-request latency trên mẫu query xác định; batch-256 đo throughput trên toàn bộ test query.
@@ -2015,9 +2015,9 @@ LLM routing chậm hơn neural/Bayesian nhiều bậc độ lớn. Policy \textt
 \item Phân tích timing chi tiết phía trên áp dụng cho Tokyo; macro 12-city được báo cáo riêng bên dưới.
 \end{itemize}
 
-\subsection{7. Kết quả mở rộng TIST2015 --- 12 thành phố}
+\subsubsection*{Kết quả mở rộng TIST2015 --- 12 thành phố}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -2035,19 +2035,19 @@ batch-256 & student-gru & 0,170549 $\pm$ 0,001154 & 148798,184329 $\pm$ 1430,972
 
 Batch-256 có throughput cao hơn khoảng 150,6 lần. Tuy nhiên, cả 12 thành phố có tổng cộng 72 cảnh báo GPU contention đã được chấp nhận cho phân tích nội bộ. Do đó số timing là \textbf{provisional}, chưa dùng làm số publication; cần benchmark lại không có tiến trình GPU ngoại lai. Summary hiện chỉ xuất hàng student-GRU.
 
-\clearpage
-\section{RQ13 --- Robustness với đầu vào thiếu hoặc nhiễu}
+
+\subsection{RQ13 --- Robustness với đầu vào thiếu hoặc nhiễu}
 
 \begin{quote}\small Frozen E5-dual được đánh giá trên cùng test query và seed 42, 43, 44. Chỉ context quan sát bị perturb; checkpoint, target và label không đổi. Các metrics là mean $\pm$ std qua seed.\end{quote}
-\subsection{1. Câu hỏi nghiên cứu}
+\subsubsection*{Câu hỏi nghiên cứu}
 
 RQ13 kiểm tra mức độ ổn định của BeliefMove-Evo khi dữ liệu GPS, timestamp, vị trí, user context hoặc temporal context bị thiếu/sai. Mọi so sánh dùng cùng query và cùng seed để đo trực tiếp mức suy giảm so với \texttt{clean}.
 
-\subsubsection{Mục tiêu}
+\paragraph{Mục tiêu}
 
 Xác định failure mode, độ nhạy theo liều nhiễu và nguồn context quan trọng nhất để định hướng kiểm tra dữ liệu, fallback và cảnh báo khi triển khai.
 
-\subsubsection{Tiêu chí đạt}
+\paragraph{Tiêu chí đạt}
 
 \begin{itemize}
 \item Giữ nguyên frozen checkpoint, target và label; chỉ perturb context quan sát.
@@ -2060,9 +2060,9 @@ nhiễm với mọi perturbation.
 
 \end{itemize}
 
-\subsection{2. Kết quả test}
+\subsubsection*{Kết quả test}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -2089,13 +2089,13 @@ context-wrong & 1.000000 $\pm$ 0.000000 & 0.049696 $\pm$ 0.002363 & 0.120713 $\p
 \end{adjustbox}
 \end{table}
 
-\subsection{3. Tóm tắt paired significance}
+\subsubsection*{Tóm tắt paired significance}
 
 Positive effect nghĩa là variant đứng trước tốt hơn; với NLL/Brier, dấu đã được đảo để quy ước “cao hơn là tốt hơn”. Holm correction được áp dụng đồng thời cho toàn bộ 90 phép kiểm định.
 
-\subsubsection{Clean so với perturbation}
+\paragraph{Clean so với perturbation}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -2121,11 +2121,11 @@ context-wrong & 0.097444 & 0.208894 & 0.134392 & 3.509069 & tất cả metrics \
 \end{adjustbox}
 \end{table}
 
-Mỗi dòng trên có bootstrap 95\% CI không cắt 0 và Holm-adjusted p < 0,05 cho các metrics được ghi. Bảng đầy đủ theo từng metric được lưu trong \texttt{results/beliefmove-evo/aggregated/rq13\_summary.json}.
+Mỗi dòng trên có bootstrap 95\% CI không cắt 0 và Holm-adjusted p < 0,05 cho các metrics được ghi. Bảng đầy đủ theo từng metric được lưu trong \path{results/beliefmove-evo/aggregated/rq13_summary.json}.
 
-\subsubsection{Dose-response trực tiếp}
+\paragraph{Dose-response trực tiếp}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -2153,25 +2153,25 @@ position-noise-200m vs position-noise-500m & NLL & 0.088658 & 0.073195--0.104458
 
 GPS dropout và position noise có dose-response rõ trên toàn bộ metrics. Với timestamp noise, mức 60 phút xấu hơn 30 phút ở MRR, NLL và Brier, nhưng khác biệt R@1/R@5/R@10 chưa có ý nghĩa sau Holm correction.
 
-\subsection{4. Phân tích kết quả}
+\subsubsection*{Phân tích kết quả}
 
-\subsubsection{4.1. Mô hình tương đối bền với thiếu một phần GPS trajectory}
+\paragraph{Mô hình tương đối bền với thiếu một phần GPS trajectory}
 
 Khi bỏ 25\% điểm GPS, R@1 chỉ giảm 0,002708 và R@10 giảm 0,003898. Bỏ 50\% làm mức giảm tăng lên 0,005951 và 0,008539. Các khác biệt nhỏ về độ lớn tuyệt đối nhưng ổn định trên cùng query và có ý nghĩa thống kê. Việc luôn giữ điểm cuối context cho thấy mô hình vẫn tận dụng tốt recent-location signal khi phần lịch sử xa hơn bị thiếu.
 
 Không nên diễn giải kết quả này là mô hình bền với việc mất toàn bộ GPS: protocol chỉ bỏ một phần prefix và luôn giữ quan sát gần nhất.
 
-\subsubsection{4.2. Timestamp noise ảnh hưởng ranking tổng thể nhiều hơn Recall@K}
+\paragraph{Timestamp noise ảnh hưởng ranking tổng thể nhiều hơn Recall@K}
 
 Cả nhiễu 30 và 60 phút đều làm clean tốt hơn có ý nghĩa. Tuy nhiên, so sánh trực tiếp 30--60 phút không khác biệt có ý nghĩa ở Recall@K, trong khi MRR, NLL và Brier xấu đi. Điều này cho thấy tăng nhiễu thời gian chủ yếu dịch chuyển thứ hạng và xác suất bên trong top-K thay vì luôn làm target rời khỏi top-K.
 
-\subsubsection{4.3. Position noise là failure mode nghiêm trọng}
+\paragraph{Position noise là failure mode nghiêm trọng}
 
 Position noise 200 m làm R@1 giảm gần 0,049; 500 m làm giảm hơn 0,054. R@10 giảm tương ứng khoảng 0,077 và 0,087. Dose-response 200--500 m có ý nghĩa trên toàn bộ ranking/probabilistic metrics.
 
 Đây là robustness của categorical POI pipeline sau nearest-POI remapping. Nó không chứng minh raw GPS encoder nhạy ở cùng mức độ, vì mô hình hiện nhận POI ID thay vì tọa độ liên tục. Changed-query rate gần 1 cho thấy phép remapping thay đổi hầu hết query; vì vậy đây là một perturbation mạnh dù bán kính được gọi là 200/500 m.
 
-\subsubsection{4.4. User context quan trọng hơn temporal context}
+\paragraph{User context quan trọng hơn temporal context}
 
 Tách one-axis cho thấy missing/wrong user làm R@1 giảm khoảng 0,095, trong khi missing time giảm 0,027 và wrong time giảm 0,035. Như vậy phần lớn suy giảm của context tổng hợp đến từ user conditioning.
 
@@ -2179,11 +2179,11 @@ Tách one-axis cho thấy missing/wrong user làm R@1 giảm khoảng 0,095, tro
 
 Temporal context vẫn có đóng góp đáng kể. Wrong time gây hại mạnh hơn missing time ở accuracy/MRR, cho thấy thông tin thời gian sai có thể nguy hiểm hơn việc dùng sentinel thiếu thời gian. Tuy nhiên, time slot 0 là một slot hợp lệ chứ chưa phải learned missing-time token, nên \texttt{context-missing-time} chỉ là proxy tương thích kiến trúc hiện tại.
 
-\subsubsection{4.5. Không diễn giải ECE tách khỏi accuracy, NLL và Brier}
+\paragraph{Không diễn giải ECE tách khỏi accuracy, NLL và Brier}
 
 ECE của position-noise thấp hơn clean dù accuracy, NLL và Brier đều xấu đi mạnh. Điều này có thể xảy ra khi mô hình giảm confidence cùng lúc với accuracy. Vì vậy không được claim position noise cải thiện calibration; đánh giá calibration phải đọc đồng thời reliability, NLL và Brier.
 
-\subsection{5. Kết luận RQ13}
+\subsubsection*{Kết luận RQ13}
 
 \begin{itemize}
 \item E5-dual tương đối bền với GPS point dropout và timestamp noise nhẹ, nhưng mọi perturbation vẫn gây suy giảm có ý nghĩa so với clean.
@@ -2193,7 +2193,7 @@ ECE của position-noise thấp hơn clean dù accuracy, NLL và Brier đều x�
 \item Missing/wrong context tổng hợp không còn bị diễn giải như một nguyên nhân đơn lẻ nhờ bốn one-axis controls.
 \end{itemize}
 
-\subsection{6. Protocol gate và giới hạn}
+\subsubsection*{Protocol gate và giới hạn}
 
 \begin{itemize}
 \item Đã đủ 13 variant, seed 42--44, raw metrics và paired predictions.
@@ -2205,9 +2205,9 @@ ECE của position-noise thấp hơn clean dù accuracy, NLL và Brier đều x�
 \item Phân tích perturbation chi tiết phía trên áp dụng cho Tokyo; snapshot macro 12-city hiện chỉ xuất hàng clean E5-dual.
 \end{itemize}
 
-\subsection{7. Snapshot 12 thành phố hiện có}
+\subsubsection*{Snapshot 12 thành phố hiện có}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.5pt}
@@ -2223,5 +2223,3 @@ clean E5-dual & 0,171903 $\pm$ 0,000780 & 0,327474 $\pm$ 0,001340 & 0,384337 $\p
 \end{table}
 
 Artifact gate 12-city đã đủ, nhưng summary chưa xuất 12 hàng perturbation. Vì vậy chưa thể tính degradation và paired clean-vs-corruption ở mức macro; RQ13 đa thành phố vẫn \textbf{report-incomplete} dù run kỹ thuật đã hoàn tất.
-
-\clearpage

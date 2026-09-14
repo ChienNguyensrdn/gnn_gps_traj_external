@@ -21,6 +21,13 @@
 \usetikzlibrary{arrows.meta,positioning,fit}
 \usepackage[hidelinks]{hyperref}
 \usepackage{url}
+% Compact, flexible float spacing. The LNCS defaults are retained for text;
+% only excess whitespace around tables and figures is reduced.
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{7pt plus 2pt minus 2pt}
+\setlength{\intextsep}{7pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{4pt plus 1pt minus 1pt}
+\setlength{\belowcaptionskip}{2pt plus 1pt minus 1pt}
 \setlength{\paperwidth}{210mm}
 \setlength{\paperheight}{297mm}
 \special{papersize=210mm,297mm}
@@ -182,7 +189,7 @@ Router gọi LLM khi $\mathcal{H}(\vect{p})>\gamma_H$ hoặc $m(\vect{p})<\gamma
 \subsection{Quy trình suy luận}
 
 Thuật toán~\ref{alg:inference} nhấn mạnh ranh giới giữa tính toán bắt buộc và lời gọi LLM có điều kiện.
-\begin{table}[H]
+\begin{table}[!htbp]
 \caption{Suy luận ba stage cho một prefix quỹ đạo.}
 \label{alg:inference}
 \centering
@@ -204,7 +211,7 @@ Thuật toán~\ref{alg:inference} nhấn mạnh ranh giới giữa tính toán b
 
 TIST2015 gồm 12 thành phố: Tokyo, Nairobi, New York, Sydney, Cape Town, Paris, Beijing, Mumbai, San Francisco, London, São Paulo và Moscow. Kết quả neural dùng ba seed 42--44; số liệu chính là macro trung bình thành phố. WWW2019 dùng Shanghai-ISP và ba seed tương tự để kiểm chứng chéo.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \caption{Thống kê sau tiền xử lý theo giao thức thực nghiệm.}
 \label{tab:data}
 \centering
@@ -227,7 +234,7 @@ Hai giao thức được giữ riêng: \emph{last-query} dự đoán bước cu�
 
 \subsection{Câu hỏi nghiên cứu và tiêu chí đạt}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \caption{Mười ba câu hỏi nghiên cứu. ``Đạt'' nghĩa là artifact đủ và kết luận thỏa tiêu chí ở cột cuối.}
 \label{tab:rqs}
 \centering
@@ -253,6 +260,7 @@ RQ & Câu hỏi và mục tiêu & Tiêu chí kết luận & Trạng thái\\
 \end{tabularx}
 \end{table}
 
+\section{Kết quả theo câu hỏi nghiên cứu}
 {\sloppy\input{rq_reports}}
 
 \iffalse
@@ -458,7 +466,6 @@ Phạm vi kết luận có bốn giới hạn. Thứ nhất, TIST2015 là macro 
 
 \method{} kết hợp teacher định lượng, LLM semantic, student chắt lọc và belief Bayes tuần tự cho dự đoán địa điểm kế tiếp. Thực nghiệm trên TIST2015 và WWW2019 cho thấy cải thiện đáng tin cậy nhất đến từ KD và DBN; frozen-checkpoint xác nhận cơ chế thời gian. Ngược lại, LLM routing và semantic evidence chưa đủ ổn định. Hướng tiếp theo là học router từ realized gain, hiệu chỉnh belief đa mục tiêu và mở rộng robustness/calibration sang nhiều thành phố mà không thay đổi giao thức đánh giá.
 
-\clearpage
 \bibliographystyle{splncs04}
 \bibliography{references}
 

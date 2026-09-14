@@ -2,7 +2,7 @@
 
 all:
 	python3 build_rq_reports.py
-	latexmk -xelatex main.tex
+	latexmk -g -xelatex main.tex
 
 clean:
 	latexmk -C

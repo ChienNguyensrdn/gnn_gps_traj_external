@@ -33,7 +33,12 @@ def inline(text: str) -> str:
 
     text = re.sub(r"\$\$(.+?)\$\$", lambda m: hold(r"\[" + m.group(1) + r"\]"), text)
     text = re.sub(r"\$([^$]+)\$", lambda m: hold("$" + m.group(1) + "$"), text)
-    text = re.sub(r"`([^`]+)`", lambda m: hold(r"\texttt{" + escape_plain(m.group(1)) + "}"), text)
+    def code(value: str) -> str:
+        if "/" in value:
+            return r"\path{" + value.replace("%", r"\%") + "}"
+        return r"\texttt{" + escape_plain(value) + "}"
+
+    text = re.sub(r"`([^`]+)`", lambda m: hold(code(m.group(1))), text)
     text = re.sub(r"\[([^]]+)\]\(([^)]+)\)", lambda m: hold(r"\href{" + escape_plain(m.group(2)) + "}{" + escape_plain(m.group(1)) + "}"), text)
     text = re.sub(r"\*\*([^*]+)\*\*", lambda m: hold(r"\textbf{" + escape_plain(m.group(1)) + "}"), text)
     text = escape_plain(text)
@@ -47,7 +52,7 @@ def table(lines: list[str]) -> str:
     rows = [rows[0]] + rows[2:]
     columns = len(rows[0])
     alignment = "@{}" + "l" + "r" * (columns - 1) + "@{}"
-    body = [r"\begin{table}[H]", r"\centering", r"\scriptsize", r"\setlength{\tabcolsep}{2.5pt}",
+    body = [r"\begin{table}[!htbp]", r"\centering", r"\scriptsize", r"\setlength{\tabcolsep}{2.5pt}",
             r"\begin{adjustbox}{max width=\textwidth}", f"\\begin{{tabular}}{{{alignment}}}", r"\toprule"]
     for index, row in enumerate(rows):
         body.append(" & ".join(row) + r" \\")
@@ -57,7 +62,12 @@ def table(lines: list[str]) -> str:
     return "\n".join(body)
 
 
-def convert(path: Path) -> str:
+def clean_heading(text: str) -> str:
+    """Remove Markdown's hand-written section numbers; LaTeX owns numbering."""
+    return re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", text).strip()
+
+
+def convert(path: Path, rq: int) -> str:
     source = path.read_text(encoding="utf-8").splitlines()
     output: list[str] = []
     paragraph: list[str] = []
@@ -88,8 +98,11 @@ def convert(path: Path) -> str:
             if in_list:
                 output.append(r"\end{" + ("enumerate" if in_list == "enumerate" else "itemize") + "}"); in_list = False
             level = len(heading.group(1))
-            command = {1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph"}[level]
-            output.append(f"\\{command}{{{inline(heading.group(2))}}}"); output.append("")
+            title = clean_heading(heading.group(2))
+            if level == 1 and not re.match(r"^RQ\d+\b", title, re.IGNORECASE):
+                title = f"RQ{rq} -- {title}"
+            command = {1: "subsection", 2: "subsubsection*", 3: "paragraph", 4: "subparagraph"}[level]
+            output.append(f"\\{command}{{{inline(title)}}}"); output.append("")
         elif line.startswith("- "):
             flush_paragraph()
             if not in_list:
@@ -119,7 +132,9 @@ def convert(path: Path) -> str:
 parts = ["% Generated mechanically from ideas/results_rq1.md ... results_rq13.md.",
          "% Run: python3 build_rq_reports.py", ""]
 for rq in range(1, 14):
-    parts.append(convert(ROOT / "ideas" / f"results_rq{rq}.md"))
-    parts.append(r"\clearpage")
-OUTPUT.write_text("\n".join(parts) + "\n", encoding="utf-8")
+    parts.append(convert(ROOT / "ideas" / f"results_rq{rq}.md", rq))
+    # Do not force every RQ onto a new page. Forced page breaks combined with
+    # non-floating tables previously left up to half a page blank.
+    parts.append("")
+OUTPUT.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
 print(f"generated {OUTPUT}")
