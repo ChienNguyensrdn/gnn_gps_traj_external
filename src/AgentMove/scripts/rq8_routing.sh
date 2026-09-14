@@ -5,9 +5,11 @@ cd "$(dirname "$0")/.."
 ACTION="${1:-audit}"; PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 CITY="${CITY:-Tokyo}"; SEED="${SEED:-42}"; LIMIT="${RQ8_LIMIT:-200}"
 MODEL="${OLLAMA_MODEL:-qwen2:7b}"; MODEL_SLUG="${MODEL//[:\/]/-}"
-BASE="data/hybrid/TIST2015/$CITY/neural_cgm"
+DATA_ROOT="${DATA_BASE:-data/hybrid/TIST2015/$CITY}"
+BASE="${NEURAL_DIR:-$DATA_ROOT/neural_cgm}"
 HYBRID_RUN_DIR="${HYBRID_RUN_DIR:-results/tist2015-hybrid/$MODEL_SLUG/limit-$LIMIT/no-osm/$CITY}"
-ROOT="results/beliefmove-evo/artifacts/full/$CITY/rq8/$MODEL_SLUG/limit-$LIMIT"
+RESULTS="${BELIEFMOVE_OUT:-results/beliefmove-evo}"
+ROOT="${RQ8_OUTPUT_ROOT:-$RESULTS/artifacts/full/$CITY/rq8/$MODEL_SLUG/limit-$LIMIT}"
 ALWAYS="$ROOT/always-cache"; OUT="$ROOT/seed-$SEED"
 
 require_file() { [[ -f "$1" ]] || { echo "Missing required file: $1" >&2; exit 2; }; }
@@ -44,7 +46,8 @@ evaluate() {
 aggregate() {
   "$PYTHON_BIN" -m hybrid.rq8_aggregate --root "$ROOT" --seeds ${RQ8_SEEDS:-42 43 44} \
     --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
-    --output "results/beliefmove-evo/aggregated/rq8_summary.json" --markdown ../../ideas/results_rq8.md
+    --output "${RQ8_SUMMARY_JSON:-$RESULTS/aggregated/rq8_summary.json}" \
+    --markdown "${RQ8_REPORT_MD:-../../ideas/results_rq8.md}"
 }
 
 evaluate_random() {

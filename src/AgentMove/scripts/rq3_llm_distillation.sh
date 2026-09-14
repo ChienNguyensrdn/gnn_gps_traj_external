@@ -5,8 +5,10 @@ cd "$(dirname "$0")/.."
 ACTION="${1:-audit}"; PY="${PYTHON_BIN:-.venv/bin/python}"; CITY="${CITY:-Tokyo}"
 SEED="${SEED:-42}"; LIMIT="${RQ3_LIMIT:-200}"; MODEL="${OLLAMA_MODEL:-qwen2:7b}"
 MODEL_SLUG="${MODEL//[:\/]/-}"; BASE="data/hybrid/TIST2015/$CITY"
-NEURAL="$BASE/neural_cgm"; HYBRID="${HYBRID_RUN_DIR:-results/tist2015-hybrid/$MODEL_SLUG/limit-$LIMIT/no-osm/$CITY}"
-ROOT="results/beliefmove-evo/artifacts/full/$CITY/rq3/$MODEL_SLUG/limit-$LIMIT/seed-$SEED"
+BASE="${DATA_BASE:-$BASE}"; NEURAL="${NEURAL_DIR:-$BASE/neural_cgm}"
+HYBRID="${HYBRID_RUN_DIR:-results/tist2015-hybrid/$MODEL_SLUG/limit-$LIMIT/no-osm/$CITY}"
+RESULTS="${BELIEFMOVE_OUT:-results/beliefmove-evo}"
+ROOT="${RQ3_OUTPUT_ROOT:-$RESULTS/artifacts/full/$CITY/rq3/$MODEL_SLUG/limit-$LIMIT/seed-$SEED}"
 req(){ [[ -f "$1" ]] || { echo "Missing required file: $1" >&2; exit 2; }; }
 audit(){
   [[ -x "$PY" ]] || { echo "Missing Python: $PY" >&2; exit 2; }
@@ -37,7 +39,8 @@ status(){
 aggregate(){
   status
   "$PY" -m hybrid.rq3_aggregate --root "$ROOT" --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" \
-    --output results/beliefmove-evo/aggregated/rq3_summary.json --markdown ../../ideas/results_rq3.md
+    --output "${RQ3_SUMMARY_JSON:-$RESULTS/aggregated/rq3_summary.json}" \
+    --markdown "${RQ3_REPORT_MD:-../../ideas/results_rq3.md}"
 }
 case "$ACTION" in audit) audit;; evaluate) evaluate;; status) status;; aggregate) aggregate;;
   *) echo "Usage: $0 <audit|evaluate|status|aggregate>" >&2; exit 2;; esac

@@ -218,6 +218,13 @@ that require the main checkpoints first:
 Run datasets separately with `CORE_DATASETS=tist2015`, `www2019`, or
 `yjmob100k`. Rerunning any action resumes from existing checkpoints and metrics.
 
+### Phase 2: RQ3, RQ4, RQ7 and RQ8
+
+Phase 2 evaluates the four selected questions on TIST2015, WWW2019 and
+YJMob100K. Its protocols, expected outcomes, result-table templates and
+resumable commands are in `phase2/README.md`. New artifacts are isolated under
+`results/phase2/`, leaving the Phase 1 results frozen.
+
 # 🔧 Debugging Tips
 1. If you encounter any exceptions, you can try relaxing the try-except control in the code to help with debugging.
 2. You can refer to the `launch.json` file in the `.vscode` directory to enable remote debugging.
