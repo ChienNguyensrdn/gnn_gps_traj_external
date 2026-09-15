@@ -5,7 +5,13 @@ ACTION="${1:-audit}"
 
 case "$ACTION" in
   audit)
-    for rq in rq4 rq7 rq3 rq8; do ./phase2/scripts/$rq.sh audit; done ;;
+    failed=0
+    for rq in rq4 rq7 rq3 rq8; do
+      echo "=== audit $rq ==="
+      ./phase2/scripts/$rq.sh audit || failed=$((failed + 1))
+    done
+    echo "Phase2 audit completed: incomplete_rqs=$failed/4"
+    (( failed == 0 )) ;;
   neural)
     ./phase2/scripts/rq4.sh run
     ./phase2/scripts/rq7.sh run ;;
