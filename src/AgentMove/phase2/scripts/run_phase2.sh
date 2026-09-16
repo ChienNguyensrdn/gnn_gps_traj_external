@@ -23,5 +23,7 @@ case "$ACTION" in
   all)
     "$0" neural
     "$0" llm ;;
-  *) echo "Usage: $0 <audit|neural|llm|all>" >&2; exit 2 ;;
+  report)
+    ./phase2/scripts/aggregate.sh all ;;
+  *) echo "Usage: $0 <audit|neural|llm|all|report>" >&2; exit 2 ;;
 esac

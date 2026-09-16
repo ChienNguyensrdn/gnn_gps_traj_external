@@ -25,7 +25,15 @@ RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
 # RQ3 và RQ8 bounded; script tạo/reuse cache đúng limit qua Ollama
 LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b \
   ./phase2/scripts/run_phase2.sh llm
+
+# Tổng hợp RQ4 và RQ7, ghi số liệu thật vào hai report Markdown
+SIGNIFICANCE_ITERATIONS=10000 ./phase2/scripts/run_phase2.sh report
 ```
+
+Có thể tạo riêng bằng `./phase2/scripts/aggregate.sh rq4` hoặc
+`./phase2/scripts/aggregate.sh rq7`. JSON trung gian nằm trong
+`results/phase2/aggregated/`; hai báo cáo được ghi tại
+`phase2/rq4_report.md` và `phase2/rq7_report.md`.
 
 Có thể giới hạn dataset khi debug:
 
