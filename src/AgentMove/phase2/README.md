@@ -26,6 +26,17 @@ RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
 LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b \
   ./phase2/scripts/run_phase2.sh llm
 
+# Xem tiến độ cache LLM của từng dataset/thành phố
+LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b \
+  ./phase2/scripts/run_phase2.sh llm-status
+
+# Theo dõi liên tục từ terminal khác
+watch -n 10 'LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b ./phase2/scripts/run_phase2.sh llm-status'
+
+# Xuất báo cáo bounded RQ3/RQ8 sau khi limit=200 hoàn tất
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b SIGNIFICANCE_ITERATIONS=10000 \
+  ./phase2/scripts/run_phase2.sh llm-report
+
 # Tổng hợp RQ4 và RQ7, ghi số liệu thật vào hai report Markdown
 SIGNIFICANCE_ITERATIONS=10000 ./phase2/scripts/run_phase2.sh report
 ```

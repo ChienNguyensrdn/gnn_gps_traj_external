@@ -20,10 +20,14 @@ case "$ACTION" in
     ./phase2/scripts/rq3.sh run
     ./phase2/scripts/rq8.sh collect
     ./phase2/scripts/rq8.sh evaluate ;;
+  llm-status)
+    ./phase2/scripts/llm_status.sh ;;
+  llm-report)
+    ./phase2/scripts/aggregate_llm.sh all ;;
   all)
     "$0" neural
     "$0" llm ;;
   report)
     ./phase2/scripts/aggregate.sh all ;;
-  *) echo "Usage: $0 <audit|neural|llm|all|report>" >&2; exit 2 ;;
+  *) echo "Usage: $0 <audit|neural|llm|llm-status|llm-report|all|report>" >&2; exit 2 ;;
 esac

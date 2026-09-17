@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import json
+import os
+import time
 from typing import Dict, Iterable, List, Tuple
 
 from .calibration import BinaryPlattCalibrator, LikelihoodRatioCalibrator, TemperatureScaler
@@ -39,17 +41,46 @@ def _populate_evidence_cache(
                     continue
                 row = json.loads(line); rows.append(row)
                 keys.add((str(row["query_id"]), str(row["evidence"]["candidate_id"])))
+    progress_every = max(1, int(os.environ.get("EVIDENCE_PROGRESS_EVERY", "10")))
+    total_queries = len(queries); started = time.monotonic(); generated = 0
+    initially_complete = 0
+    for query in queries:
+        ranked = sorted(query.candidates, key=lambda item: item.logit, reverse=True)[:top_k]
+        if all((query.query_id, candidate.candidate_id) in keys for candidate in ranked):
+            initially_complete += 1
+    print(json.dumps({
+        "phase": "evidence-cache-start", "cache": str(path),
+        "completed_queries": initially_complete, "total_queries": total_queries,
+        "percent": round(100.0 * initially_complete / max(total_queries, 1), 2),
+        "cached_evidence": len(keys), "progress_every": progress_every,
+    }), flush=True)
     with path.open("a", encoding="utf-8") as cache_handle:
-        for query in queries:
+        completed = 0
+        for position, query in enumerate(queries, start=1):
             ranked = sorted(query.candidates, key=lambda item: item.logit, reverse=True)[:top_k]
             missing = [candidate for candidate in ranked if (query.query_id, candidate.candidate_id) not in keys]
-            if not missing:
-                continue
-            extracted = extractor.extract(query, missing, retriever.retrieve(query.history, query.context))
-            for evidence in extracted:
-                row = {"query_id": query.query_id, "evidence": asdict(evidence)}
-                rows.append(row); keys.add((query.query_id, evidence.candidate_id))
-                cache_handle.write(json.dumps(row, ensure_ascii=False) + "\n"); cache_handle.flush()
+            if missing:
+                extracted = extractor.extract(query, missing, retriever.retrieve(query.history, query.context))
+                for evidence in extracted:
+                    row = {"query_id": query.query_id, "evidence": asdict(evidence)}
+                    rows.append(row); keys.add((query.query_id, evidence.candidate_id)); generated += 1
+                    cache_handle.write(json.dumps(row, ensure_ascii=False) + "\n"); cache_handle.flush()
+            if all((query.query_id, candidate.candidate_id) in keys for candidate in ranked):
+                completed += 1
+            if position == total_queries or position % progress_every == 0:
+                elapsed = time.monotonic() - started
+                newly_completed = max(0, completed - initially_complete)
+                rate = newly_completed / elapsed if elapsed > 0 else 0.0
+                remaining = max(0, total_queries - completed)
+                eta = remaining / rate if rate > 0 else None
+                print(json.dumps({
+                    "phase": "evidence-cache-progress", "cache": str(path),
+                    "completed_queries": completed, "total_queries": total_queries,
+                    "percent": round(100.0 * completed / max(total_queries, 1), 2),
+                    "generated_evidence": generated, "elapsed_seconds": round(elapsed, 1),
+                    "queries_per_second": round(rate, 4),
+                    "eta_seconds": round(eta, 1) if eta is not None else None,
+                }), flush=True)
     return CachedEvidenceExtractor(rows)
 
 
