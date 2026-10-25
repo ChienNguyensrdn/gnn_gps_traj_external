@@ -22,16 +22,16 @@ cd src/AgentMove
 RQ_SEEDS="42 43 44" DEVICE=cuda BATCH_SIZE=128 \
   ./phase2/scripts/run_phase2.sh neural
 
-# RQ3 và RQ8 bounded; script tạo/reuse cache đúng limit qua Ollama
-LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b \
+# RQ3 và RQ8 bounded theo protocol dùng trong paper
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b \
   ./phase2/scripts/run_phase2.sh llm
 
 # Xem tiến độ cache LLM của từng dataset/thành phố
-LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b \
+LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b \
   ./phase2/scripts/run_phase2.sh llm-status
 
 # Theo dõi liên tục từ terminal khác
-watch -n 10 'LLM_LIMIT=1000 OLLAMA_MODEL=qwen2:7b ./phase2/scripts/run_phase2.sh llm-status'
+watch -n 10 'LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b ./phase2/scripts/run_phase2.sh llm-status'
 
 # Xuất báo cáo bounded RQ3/RQ8 sau khi limit=200 hoàn tất
 LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b SIGNIFICANCE_ITERATIONS=10000 \
@@ -39,6 +39,21 @@ LLM_LIMIT=200 OLLAMA_MODEL=qwen2:7b SIGNIFICANCE_ITERATIONS=10000 \
 
 # Tổng hợp RQ4 và RQ7, ghi số liệu thật vào hai report Markdown
 SIGNIFICANCE_ITERATIONS=10000 ./phase2/scripts/run_phase2.sh report
+
+# Kiểm tra gate của cả bốn RQ trước khi xuất bảng cho paper
+LLM_LIMIT=200 ./phase2/scripts/publication_paper.sh audit
+
+# Sinh lại sections/generated_phase2_tables.tex từ JSON đã khóa
+PAPER_DIR=/path/to/IEEE-Transactions_Latex LLM_LIMIT=200 \
+  ./phase2/scripts/publication_paper.sh export
+
+# Biên dịch paper sau khi export
+PAPER_DIR=/path/to/IEEE-Transactions_Latex \
+  ./phase2/scripts/publication_paper.sh build
+
+# Hoặc aggregate + audit + export + build trong một lệnh
+PAPER_DIR=/path/to/IEEE-Transactions_Latex LLM_LIMIT=200 \
+  ./phase2/scripts/publication_paper.sh all
 ```
 
 Có thể tạo riêng bằng `./phase2/scripts/aggregate.sh rq4` hoặc
@@ -54,4 +69,4 @@ PHASE2_DATASETS=yjmob100k ./phase2/scripts/rq7.sh run
 TIST_CITIES="Tokyo NewYork" ./phase2/scripts/rq3.sh audit
 ```
 
-Không so trực tiếp neural last-query với Bayesian all-prefix. Kết quả LLM `LLM_LIMIT=1000` vẫn là bounded experiment và phải được ghi nhãn như vậy.
+`publication_paper.sh` dừng ngay nếu một JSON chưa có gate `ready`/`ready-bounded`, còn artifact thiếu, hoặc thiếu một trong ba dataset. Không so trực tiếp neural last-query với Bayesian all-prefix. Kết quả LLM `LLM_LIMIT=200` vẫn là bounded experiment và phải được ghi nhãn như vậy.
