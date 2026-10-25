@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,6 +9,14 @@ import numpy as np
 
 
 POLICIES = ("never", "always", "entropy", "margin", "random-budget-matched")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def read_jsonl(path: Path):
@@ -31,9 +40,17 @@ def load_split(path: Path, limit: int | None):
 
 
 def load_always(path: Path, expected_ids):
-    by_id = {str(row["query_id"]): row for row in read_jsonl(path)}
+    by_id = {}
+    for row in read_jsonl(path):
+        query_id = str(row["query_id"])
+        if query_id in by_id:
+            raise ValueError(f"Always-LLM cache has duplicate query_id={query_id}: {path}")
+        by_id[query_id] = row
     missing = [query_id for query_id in expected_ids if query_id not in by_id]
     if missing: raise ValueError(f"Always-LLM cache missing {len(missing)} queries; first={missing[0]}")
+    unexpected = sorted(set(by_id) - set(expected_ids))
+    if unexpected:
+        raise ValueError(f"Always-LLM cache has unexpected query_id={unexpected[0]}: {path}")
     return [by_id[query_id] for query_id in expected_ids]
 
 
@@ -55,9 +72,17 @@ def metrics(ranks, calls, always_rows):
     latency = np.asarray([float(row.get("latency_seconds", 0)) for row in always_rows]) * calls
     input_tokens = np.asarray([float(row.get("input_tokens", 0)) for row in always_rows]) * calls
     output_tokens = np.asarray([float(row.get("output_tokens", 0)) for row in always_rows]) * calls
+    api_requests = np.asarray([float(row.get("api_calls", 1)) for row in always_rows]) * calls
+    invalid = np.asarray([not bool(row.get("valid", True)) for row in always_rows], dtype=float) * calls
     return {"queries": int(len(ranks)), "recall@1": float(np.mean(ranks <= 1)),
             "recall@5": float(np.mean(ranks <= 5)), "recall@10": float(np.mean(ranks <= 10)),
-            "mrr": float(np.mean(1.0 / ranks)), "llm_call_rate": float(calls.mean()),
+            "mrr": float(np.mean(1.0 / ranks)),
+            # ``llm_call_rate`` is retained for backward compatibility.  The
+            # explicit fields distinguish selected queries from physical API
+            # requests when a cache row required more than one request.
+            "llm_call_rate": float(calls.mean()), "selected_query_rate": float(calls.mean()),
+            "api_requests_per_query": float(api_requests.mean()),
+            "invalid_outputs_per_query": float(invalid.mean()),
             "latency_mean": float(latency.mean()), "latency_p50": float(np.quantile(latency, .5)),
             "latency_p95": float(np.quantile(latency, .95)),
             "input_tokens_per_query": float(input_tokens.mean()),
@@ -99,14 +124,17 @@ def oracle_mask(stage_ranks, llm_ranks, budget):
 
 
 def evaluate(args):
-    config = json.loads(Path(args.config).read_text()); temperature = float(
-        json.loads(Path(args.calibration).read_text())["temperature"]["temperature"])
-    val_rows, val_logits, val_ids = load_split(Path(args.validation), args.limit)
-    test_rows, test_logits, test_ids = load_split(Path(args.test), args.limit)
+    config_path = Path(args.config); calibration_path = Path(args.calibration)
+    validation_path = Path(args.validation); test_path = Path(args.test)
+    validation_always_path = Path(args.validation_always); test_always_path = Path(args.test_always)
+    config = json.loads(config_path.read_text()); temperature = float(
+        json.loads(calibration_path.read_text())["temperature"]["temperature"])
+    val_rows, val_logits, val_ids = load_split(validation_path, args.limit)
+    test_rows, test_logits, test_ids = load_split(test_path, args.limit)
     if val_ids != test_ids: raise ValueError("validation and test candidate spaces differ")
     val_query_ids = [str(row["query_id"]) for row in val_rows]; test_query_ids = [str(row["query_id"]) for row in test_rows]
-    val_always = load_always(Path(args.validation_always), val_query_ids)
-    test_always = load_always(Path(args.test_always), test_query_ids)
+    val_always = load_always(validation_always_path, val_query_ids)
+    test_always = load_always(test_always_path, test_query_ids)
     val_stage, val_entropy, val_margin = stage_arrays(val_rows, val_logits, val_ids, temperature)
     test_stage, test_entropy, test_margin = stage_arrays(test_rows, test_logits, test_ids, temperature)
     val_llm = np.asarray([row["true_rank"] for row in val_always], dtype=np.int32)
@@ -138,6 +166,7 @@ def evaluate(args):
     for policy in POLICIES:
         ranks = routed(test_stage, test_llm, masks[policy]); summaries[policy] = metrics(ranks, masks[policy], test_always)
         np.savez_compressed(output / f"{policy}.test.predictions.npz", query_id=np.asarray(test_query_ids),
+                            user_id=np.asarray([str(row.get("user_id", "")) for row in test_rows]),
                             labels=np.arange(len(test_rows)), query_index=np.arange(len(test_rows)),
                             ranks=ranks, called_llm=masks[policy].astype(np.int8))
     oracle_metrics = metrics(routed(test_stage, test_llm, oracle), oracle, test_always)
@@ -152,6 +181,17 @@ def evaluate(args):
                                       "metrics": metrics(routed(val_stage, val_llm, calls), calls, val_always)}
     payload = {"rq": "RQ8", "seed": args.seed, "fit_split": "validation", "evaluation_split": "test",
                "limit": args.limit, "target_call_rate": budget,
+               "routing_mode": "counterfactual_replay_from_always_response_bank",
+               "physical_requests_during_routing": 0,
+               "reported_request_cost": "simulated_deployment_budget",
+               "provenance": {
+                   "routing_config_sha256": sha256_file(config_path),
+                   "calibration_sha256": sha256_file(calibration_path),
+                   "validation_input_sha256": sha256_file(validation_path),
+                   "test_input_sha256": sha256_file(test_path),
+                   "validation_always_sha256": sha256_file(validation_always_path),
+                   "test_always_sha256": sha256_file(test_always_path),
+               },
                "selected_thresholds": {"entropy": entropy_threshold, "margin": margin_threshold},
                "validation_selection": validation_selection, "budget_sweep": budget_sweep,
                "oracle_upper_bound": oracle_metrics,

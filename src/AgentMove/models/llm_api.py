@@ -3,6 +3,7 @@ import os
 import random
 import httpx
 import argparse
+import hashlib
 import time
 from openai import OpenAI
 
@@ -195,35 +196,72 @@ class LLMWrapper:
         self.client = self.llm_api.get_client()
         self.api_model_name = self.llm_api.get_model_name()
 
-    @retry(wait=wait_random_exponential(min=WAIT_TIME_MIN, max=WAIT_TIME_MAX), stop=stop_after_attempt(ATTEMPT_COUNTER))
-    def get_response(self, prompt_text):
+    def prepare_prompt(self, prompt_text):
+        """Apply the wrapper's deterministic input bound before an API call."""
+        if max(1, (len(prompt_text) + 3) // 4) > self.hyperparams['max_input_tokens']:
+            prompt_text = prompt_text[-min(self.hyperparams['max_input_tokens'] * 3, len(prompt_text)):]
+        return prompt_text
+
+    def _request_once(self, prompt_text, disable_sdk_retries=False):
+        """Issue one wrapper-level request and record success or failure.
+
+        ``disable_sdk_retries`` is required by strict information-budget
+        experiments.  It disables retries inside the OpenAI SDK; the caller is
+        then responsible for deciding whether another physical request is
+        scientifically permitted.
+        """
+        prompt_text = self.prepare_prompt(prompt_text)
         if "gpt" in self.model_name:
             system_messages = [{"role": "system", "content": "You are a helpful assistant who predicts user next location."}]
         else:
             system_messages = []
-        
-
-        # A conservative local estimate avoids network-dependent tokenizer
-        # downloads before every API call.
-        if max(1, (len(prompt_text) + 3) // 4) > self.hyperparams['max_input_tokens']:
-            prompt_text = prompt_text[-min(self.hyperparams['max_input_tokens']*3, len(prompt_text)):]
-        
+        client = self.client.with_options(max_retries=0) if disable_sdk_retries else self.client
         started = time.perf_counter()
-        response = self.client.chat.completions.create(
-            model=self.api_model_name,
-            messages=system_messages + [{"role": "user", "content": prompt_text}],
-            max_tokens=self.hyperparams["max_tokens"],
-            temperature=self.hyperparams["temperature"]
-        )
+        try:
+            response = client.chat.completions.create(
+                model=self.api_model_name,
+                messages=system_messages + [{"role": "user", "content": prompt_text}],
+                max_tokens=self.hyperparams["max_tokens"],
+                temperature=self.hyperparams["temperature"]
+            )
+        except Exception as exc:
+            elapsed = time.perf_counter() - started
+            self.__class__._call_stats.append({
+                "input_tokens": max(1, len(prompt_text) // 4),
+                "output_tokens": 0,
+                "latency_seconds": elapsed,
+                "physical_attempts": 1,
+                "success": False,
+                "token_source": "estimated",
+                "prompt_sha256": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+            raise
         elapsed = time.perf_counter() - started
         full_text = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        exact_usage = prompt_tokens > 0 and completion_tokens > 0
         self.__class__._call_stats.append({
-            "input_tokens": int(getattr(usage, "prompt_tokens", 0) or max(1, len(prompt_text) // 4)),
-            "output_tokens": int(getattr(usage, "completion_tokens", 0) or max(1, len(full_text) // 4)),
+            "input_tokens": prompt_tokens or max(1, len(prompt_text) // 4),
+            "output_tokens": completion_tokens or max(1, len(full_text) // 4),
             "latency_seconds": elapsed,
+            "physical_attempts": 1,
+            "success": True,
+            "token_source": "api" if exact_usage else "estimated",
+            "prompt_sha256": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+            "error": "",
         })
         return full_text
+
+    @retry(wait=wait_random_exponential(min=WAIT_TIME_MIN, max=WAIT_TIME_MAX), stop=stop_after_attempt(ATTEMPT_COUNTER))
+    def get_response(self, prompt_text):
+        return self._request_once(prompt_text, disable_sdk_retries=False)
+
+    def get_response_once(self, prompt_text):
+        """Make exactly one physical API attempt with all automatic retries off."""
+        return self._request_once(prompt_text, disable_sdk_retries=True)
 
 
 if __name__ == "__main__":

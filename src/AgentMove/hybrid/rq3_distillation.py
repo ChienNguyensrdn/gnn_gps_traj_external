@@ -185,7 +185,7 @@ def run(args):
 
 
 def main():
-    parser=argparse.ArgumentParser(description="RQ3 LLM knowledge distillation/fusion evaluation")
+    parser=argparse.ArgumentParser(description="RQ3 inference-time structured-evidence fusion evaluation")
     parser.add_argument("--train-csv",required=True); parser.add_argument("--validation",required=True)
     parser.add_argument("--test",required=True); parser.add_argument("--evidence-cache",required=True)
     parser.add_argument("--calibration",required=True); parser.add_argument("--output-dir",required=True)

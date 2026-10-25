@@ -24,10 +24,21 @@ case "$ACTION" in
     ./phase2/scripts/llm_status.sh ;;
   llm-report)
     ./phase2/scripts/aggregate_llm.sh all ;;
+  direct-llm-prepare)
+    ./phase2/scripts/direct_query_llm.sh prepare ;;
+  direct-llm)
+    ./phase2/scripts/direct_query_llm.sh collect
+    ./phase2/scripts/direct_query_llm.sh route ;;
+  direct-llm-status)
+    ./phase2/scripts/direct_query_llm.sh status ;;
+  direct-llm-audit)
+    ./phase2/scripts/direct_query_llm.sh audit ;;
+  direct-llm-report)
+    ./phase2/scripts/direct_query_llm.sh aggregate ;;
   all)
     "$0" neural
     "$0" llm ;;
   report)
     ./phase2/scripts/aggregate.sh all ;;
-  *) echo "Usage: $0 <audit|neural|llm|llm-status|llm-report|all|report>" >&2; exit 2 ;;
+  *) echo "Usage: $0 <audit|neural|llm|llm-status|llm-report|direct-llm-prepare|direct-llm|direct-llm-status|direct-llm-audit|direct-llm-report|all|report>" >&2; exit 2 ;;
 esac

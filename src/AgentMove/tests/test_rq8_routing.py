@@ -1,8 +1,10 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from hybrid.rq8_routing import choose_threshold, metrics, oracle_mask, routed
+from hybrid.rq8_routing import choose_threshold, load_always, metrics, oracle_mask, routed
 
 
 class RQ8RoutingTest(unittest.TestCase):
@@ -16,15 +18,42 @@ class RQ8RoutingTest(unittest.TestCase):
         self.assertLessEqual(float(np.mean(uncertainty > threshold)), 0.25)
 
     def test_cost_metrics_include_zero_for_uncalled_queries(self):
-        rows = [{"latency_seconds": 2, "input_tokens": 10, "output_tokens": 2}] * 2
+        rows = [{"latency_seconds": 2, "input_tokens": 10, "output_tokens": 2,
+                 "api_calls": 1, "valid": True}] * 2
         result = metrics(np.asarray([1, 2]), np.asarray([True, False]), rows)
         self.assertEqual(result["llm_call_rate"], 0.5)
+        self.assertEqual(result["selected_query_rate"], 0.5)
+        self.assertEqual(result["api_requests_per_query"], 0.5)
         self.assertEqual(result["latency_mean"], 1.0)
         self.assertEqual(result["tokens_per_query"], 6.0)
+
+    def test_physical_requests_are_not_confused_with_selected_rate(self):
+        rows = [{"latency_seconds": 1, "input_tokens": 8, "output_tokens": 2,
+                 "api_calls": 4, "valid": False},
+                {"latency_seconds": 1, "input_tokens": 8, "output_tokens": 2,
+                 "api_calls": 1, "valid": True}]
+        result = metrics(np.asarray([1, 2]), np.asarray([True, False]), rows)
+        self.assertEqual(result["selected_query_rate"], 0.5)
+        self.assertEqual(result["api_requests_per_query"], 2.0)
+        self.assertEqual(result["invalid_outputs_per_query"], 0.5)
 
     def test_oracle_calls_only_positive_gain_within_budget(self):
         mask = oracle_mask(np.asarray([1, 5, 2, 3]), np.asarray([2, 1, 2, 1]), 0.5)
         np.testing.assert_array_equal(mask, [False, True, False, True])
+
+    def test_always_cache_rejects_duplicate_query_ids(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "always.jsonl"
+            path.write_text('{"query_id":"q1"}\n{"query_id":"q1"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate query_id=q1"):
+                load_always(path, ["q1"])
+
+    def test_always_cache_rejects_unexpected_query_ids(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "always.jsonl"
+            path.write_text('{"query_id":"q1"}\n{"query_id":"q2"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unexpected query_id=q2"):
+                load_always(path, ["q1"])
 
 
 if __name__ == "__main__": unittest.main()
