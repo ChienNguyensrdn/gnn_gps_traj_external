@@ -114,6 +114,27 @@ def threshold_mask(kind, uncertainty, threshold):
     return uncertainty > threshold if kind == "entropy" else uncertainty < threshold
 
 
+def budget_capped_mask(kind, uncertainty, threshold, budget):
+    """Apply a validation-selected threshold under a deterministic test budget.
+
+    A threshold that respects the call-rate cap on validation can exceed it on
+    test after an uncertainty-distribution shift.  The cap projection uses only
+    test uncertainty scores (never labels or LLM outcomes) and keeps the most
+    uncertain threshold-eligible queries, with stable query order breaking ties.
+    """
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    eligible = np.asarray(threshold_mask(kind, uncertainty, threshold), dtype=bool)
+    maximum = int(np.floor(float(budget) * len(eligible) + 1e-12))
+    if int(eligible.sum()) <= maximum:
+        return eligible
+    order = (np.argsort(-uncertainty, kind="stable") if kind == "entropy"
+             else np.argsort(uncertainty, kind="stable"))
+    selected = order[eligible[order]][:maximum]
+    result = np.zeros(len(eligible), dtype=bool)
+    result[selected] = True
+    return result
+
+
 def oracle_mask(stage_ranks, llm_ranks, budget):
     gain = ((llm_ranks <= 1).astype(float) - (stage_ranks <= 1).astype(float)
             + 1.0 / llm_ranks - 1.0 / stage_ranks)
@@ -140,6 +161,9 @@ def evaluate(args):
     val_llm = np.asarray([row["true_rank"] for row in val_always], dtype=np.int32)
     test_llm = np.asarray([row["true_rank"] for row in test_always], dtype=np.int32)
     budget = float(config["target_call_rate"]); quantiles = int(config["auto_quantile_candidates"])
+    budget_enforcement = config.get("test_budget_enforcement")
+    if budget_enforcement != "deterministic_uncertainty_rank_hard_cap":
+        raise ValueError("routing config must declare deterministic test budget enforcement")
     budget_sweep = {}; selected_by_budget = {}
     for candidate_budget in [float(value) for value in config.get("call_budgets", [budget])]:
         entropy_value = choose_threshold("entropy", val_entropy, val_stage, val_llm,
@@ -150,14 +174,14 @@ def evaluate(args):
         budget_sweep[str(candidate_budget)] = {}
         for kind, uncertainty, threshold in (("entropy", test_entropy, entropy_value),
                                              ("margin", test_margin, margin_value)):
-            calls = threshold_mask(kind, uncertainty, threshold)
+            calls = budget_capped_mask(kind, uncertainty, threshold, candidate_budget)
             budget_sweep[str(candidate_budget)][kind] = metrics(routed(test_stage, test_llm, calls), calls, test_always)
     primary = selected_by_budget[str(budget)]
     entropy_threshold = primary["entropy"]; margin_threshold = primary["margin"]
     masks = {"never": np.zeros(len(test_rows), dtype=bool), "always": np.ones(len(test_rows), dtype=bool),
-             "entropy": threshold_mask("entropy", test_entropy, entropy_threshold),
-             "margin": threshold_mask("margin", test_margin, margin_threshold)}
-    random_rate = float(masks["entropy"].mean()); random_count = int(round(random_rate * len(test_rows)))
+             "entropy": budget_capped_mask("entropy", test_entropy, entropy_threshold, budget),
+             "margin": budget_capped_mask("margin", test_margin, margin_threshold, budget)}
+    random_count = int(masks["entropy"].sum())
     random_mask = np.zeros(len(test_rows), dtype=bool)
     random_mask[np.random.default_rng(args.seed).permutation(len(test_rows))[:random_count]] = True
     masks["random-budget-matched"] = random_mask
@@ -184,6 +208,7 @@ def evaluate(args):
                "routing_mode": "counterfactual_replay_from_always_response_bank",
                "physical_requests_during_routing": 0,
                "reported_request_cost": "simulated_deployment_budget",
+               "test_budget_enforcement": budget_enforcement,
                "provenance": {
                    "routing_config_sha256": sha256_file(config_path),
                    "calibration_sha256": sha256_file(calibration_path),

@@ -4,7 +4,14 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from hybrid.rq8_routing import choose_threshold, load_always, metrics, oracle_mask, routed
+from hybrid.rq8_routing import (
+    budget_capped_mask,
+    choose_threshold,
+    load_always,
+    metrics,
+    oracle_mask,
+    routed,
+)
 
 
 class RQ8RoutingTest(unittest.TestCase):
@@ -16,6 +23,16 @@ class RQ8RoutingTest(unittest.TestCase):
         threshold = choose_threshold("entropy", uncertainty, np.asarray([1, 2, 4, 5]),
                                      np.asarray([1, 1, 1, 1]), [], 0.25, 4)
         self.assertLessEqual(float(np.mean(uncertainty > threshold)), 0.25)
+
+    def test_test_distribution_shift_is_projected_to_hard_budget(self):
+        uncertainty = np.asarray([0.9, 0.8, 0.7, 0.6])
+        mask = budget_capped_mask("entropy", uncertainty, threshold=0.5, budget=0.25)
+        np.testing.assert_array_equal(mask, [True, False, False, False])
+
+    def test_margin_budget_cap_keeps_smallest_eligible_scores_stably(self):
+        uncertainty = np.asarray([0.1, 0.1, 0.2, 0.3])
+        mask = budget_capped_mask("margin", uncertainty, threshold=0.4, budget=0.5)
+        np.testing.assert_array_equal(mask, [True, True, False, False])
 
     def test_cost_metrics_include_zero_for_uncalled_queries(self):
         rows = [{"latency_seconds": 2, "input_tokens": 10, "output_tokens": 2,

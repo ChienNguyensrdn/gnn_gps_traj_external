@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from hybrid.paired_order_test import holm_adjust, load_npz
-from hybrid.rq8_routing import POLICIES
+from hybrid.rq8_routing import POLICIES, budget_capped_mask
 from phase2.aggregate_reports import CITIES, dataset_specs
 
 
@@ -294,6 +294,7 @@ def _expected_routing_metrics(ranks: np.ndarray, called: np.ndarray,
 def _routing_identity(payload: dict) -> dict:
     keys = ("rq", "fit_split", "evaluation_split", "limit", "target_call_rate",
             "routing_mode", "physical_requests_during_routing", "reported_request_cost",
+            "test_budget_enforcement",
             "selected_thresholds", "validation_selection", "budget_sweep", "random_matched_to",
             "routing_config_sha256", "config_sha256", "provenance")
     return {key: payload[key] for key in keys if key in payload}
@@ -325,7 +326,9 @@ def _validate_routing_unit(folder: Path, seeds: list[int], direct: dict, limit: 
             raise ValueError(f"routing split/limit mismatch: {metric_path}")
         if payload.get("routing_mode") != "counterfactual_replay_from_always_response_bank" \
                 or payload.get("physical_requests_during_routing") != 0 \
-                or payload.get("reported_request_cost") != "simulated_deployment_budget":
+                or payload.get("reported_request_cost") != "simulated_deployment_budget" \
+                or payload.get("test_budget_enforcement") \
+                != "deterministic_uncertainty_rank_hard_cap":
             raise ValueError(f"routing replay protocol mismatch: {metric_path}")
         provenance = payload.get("provenance", {})
         if not provenance.get("routing_config_sha256"):
@@ -378,6 +381,11 @@ def _validate_routing_unit(folder: Path, seeds: list[int], direct: dict, limit: 
         target = float(payload.get("target_call_rate", 1.0))
         if selected / max(len(expected_ids), 1) > target + 1e-12:
             raise ValueError(f"observed entropy request rate exceeds configured cap: seed={seed}")
+        for kind in ("entropy", "margin"):
+            validation_rate = float(payload.get("validation_selection", {})
+                                    .get(kind, {}).get("call_rate", 2.0))
+            if validation_rate > target + 1e-12:
+                raise ValueError(f"validation {kind} request rate exceeds configured cap: seed={seed}")
         diagnostics_path = route / "routing_diagnostics.test.npz"
         diagnostics = load_npz(diagnostics_path)
         for key, expected in (("query_id", expected_ids), ("stage_ranks", quantitative),
@@ -389,6 +397,17 @@ def _validate_routing_unit(folder: Path, seeds: list[int], direct: dict, limit: 
         for key in ("entropy", "margin", "oracle_called"):
             if key not in diagnostics or len(diagnostics[key]) != len(expected_ids):
                 raise ValueError(f"routing diagnostics missing/alignment mismatch: seed={seed}, field={key}")
+        for kind in ("entropy", "margin"):
+            threshold = float(payload.get("selected_thresholds", {}).get(kind, np.nan))
+            expected_called = budget_capped_mask(kind, diagnostics[kind], threshold, target)
+            actual_called = arrays_by_policy[kind]["called_llm"].astype(bool)
+            if not np.array_equal(actual_called, expected_called):
+                raise ValueError(f"routing mask is not the deterministic capped mask: seed={seed}, policy={kind}")
+        for kind in ("entropy", "margin", "random-budget-matched"):
+            arrays = arrays_by_policy[kind]
+            expected_ranks = np.where(arrays["called_llm"].astype(bool), direct_ranks, quantitative)
+            if not np.array_equal(arrays["ranks"], expected_ranks):
+                raise ValueError(f"routing ranks do not match selected source: seed={seed}, policy={kind}")
         payloads.append(payload)
     return payloads
 

@@ -5,6 +5,7 @@
   "margin_thresholds": [0.05, 0.1, 0.2, 0.3, 0.4],
   "selection_metric": "recall@1+mrr_with_call_rate_cap",
   "target_call_rate": 0.25,
+  "test_budget_enforcement": "deterministic_uncertainty_rank_hard_cap",
   "call_budgets": [0.1, 0.25, 0.5],
   "auto_quantile_candidates": 20,
   "test_threshold_tuning": false

@@ -227,7 +227,7 @@ class DirectQueryAggregateTest(unittest.TestCase):
                                 stage_ranks=np.asarray([1, 2], dtype=np.int32),
                                 llm_ranks=np.asarray([2, 1], dtype=np.int32),
                                 entropy=np.asarray([2.0, 0.5]),
-                                margin=np.asarray([0.1, 0.9]),
+                                margin=np.asarray([0.9, 0.1]),
                                 oracle_called=np.asarray([0, 1], dtype=np.int8))
             payload = {
                 "rq": "RQ8",
@@ -239,9 +239,13 @@ class DirectQueryAggregateTest(unittest.TestCase):
                 "routing_mode": "counterfactual_replay_from_always_response_bank",
                 "physical_requests_during_routing": 0,
                 "reported_request_cost": "simulated_deployment_budget",
+                "test_budget_enforcement": "deterministic_uncertainty_rank_hard_cap",
                 "provenance": provenance,
-                "selected_thresholds": {"entropy": 1.0, "margin": 0.1},
-                "validation_selection": {"entropy": {"threshold": 1.0, "call_rate": 0.5}},
+                "selected_thresholds": {"entropy": 1.0, "margin": 1.0},
+                "validation_selection": {
+                    "entropy": {"threshold": 1.0, "call_rate": 0.5},
+                    "margin": {"threshold": 1.0, "call_rate": 0.5},
+                },
                 "budget_sweep": {"0.5": {"entropy": {"selected_query_rate": 0.5}}},
                 "random_matched_to": "entropy test call rate",
                 "metrics": metrics,
