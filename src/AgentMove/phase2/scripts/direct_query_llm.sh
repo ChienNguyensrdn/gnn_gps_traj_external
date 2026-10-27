@@ -130,16 +130,14 @@ for dataset in $PHASE2_DATASETS; do
         if [[ "$DIRECT_WORLD_MODE" == "internal_only" ]]; then
           echo "scope=bounded-transductive internal_only_metadata=category,latitude,longitude"
         fi
-        for random_seed in $DIRECT_RANDOM_SEEDS; do
-          "$PYTHON_BIN" -m hybrid.rq8_routing \
-            --validation "$P2_DATA_BASE/neural_cgm/validation.jsonl" \
-            --test "$P2_DATA_BASE/neural_cgm/test.jsonl" \
-            --validation-always "$VALIDATION_CACHE/predictions.jsonl" \
-            --test-always "$TEST_CACHE/predictions.jsonl" \
-            --calibration "$TEMPERATURE_FILE" \
-            --output-dir "$ROUTING_ROOT/seed-$random_seed" \
-            --limit "$LLM_LIMIT" --seed "$random_seed"
-        done
+        "$PYTHON_BIN" -m hybrid.rq8_routing \
+          --validation "$P2_DATA_BASE/neural_cgm/validation.jsonl" \
+          --test "$P2_DATA_BASE/neural_cgm/test.jsonl" \
+          --validation-always "$VALIDATION_CACHE/predictions.jsonl" \
+          --test-always "$TEST_CACHE/predictions.jsonl" \
+          --calibration "$TEMPERATURE_FILE" \
+          --output-root "$ROUTING_ROOT" --seeds $DIRECT_RANDOM_SEEDS \
+          --limit "$LLM_LIMIT"
         ;;
       status)
         "$PYTHON_BIN" -m hybrid.direct_query_llm status \

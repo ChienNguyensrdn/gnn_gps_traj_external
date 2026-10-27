@@ -185,8 +185,8 @@ class DirectQueryAggregateTest(unittest.TestCase):
     def _policy_arrays(self, seed: int) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         quantitative = np.asarray([1, 2], dtype=np.int32)
         direct = np.asarray([2, 1], dtype=np.int32)
-        random_called = (np.asarray([1, 0], dtype=np.int8) if seed == 42
-                         else np.asarray([0, 1], dtype=np.int8))
+        random_called = np.zeros(2, dtype=np.int8)
+        random_called[np.random.default_rng(seed).permutation(2)[:1]] = 1
         return {
             "never": (quantitative, np.asarray([0, 0], dtype=np.int8)),
             "always": (direct, np.asarray([1, 1], dtype=np.int8)),
@@ -264,6 +264,17 @@ class DirectQueryAggregateTest(unittest.TestCase):
         self.assertEqual(payload["missing"], [])
         self.assertEqual(payload["transport_errors"], 0)
         self.assertEqual(payload["model_digests"], [self.digest])
+
+    def test_routing_seed_must_match_seed_directory(self) -> None:
+        path = self.folder / "routing/seed-42/rq8.metrics.json"
+        payload = json.loads(path.read_text())
+        payload["seed"] = 999
+        self._write_json(path, payload)
+        spec = {"key": "fixture", "label": "Fixture", "root": self.root,
+                "units": ["Fixture"]}
+        with patch("phase2.aggregate_direct_query_llm.dataset_specs", return_value=[spec]):
+            with self.assertRaisesRegex(ValueError, "seed/directory mismatch"):
+                collect(self.root, "qwen2-7b", 2, ["Fixture"], self.seeds, 1000)
 
     def test_missing_request_journal_fails(self) -> None:
         (self.folder / "always-cache/test/requests.jsonl").unlink()

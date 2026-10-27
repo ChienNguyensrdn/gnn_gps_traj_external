@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +25,32 @@ def sha256_file(path: Path) -> str:
 def read_jsonl(path: Path):
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def write_json_atomic(path: Path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists(): temporary.unlink()
+
+
+def save_npz_atomic(path: Path, **arrays):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
+                                         suffix=".npz", delete=False)
+    temporary = Path(handle.name); handle.close()
+    try:
+        np.savez_compressed(temporary, **arrays)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists(): temporary.unlink()
 
 
 def load_split(path: Path, limit: int | None):
@@ -54,9 +83,10 @@ def load_always(path: Path, expected_ids):
     return [by_id[query_id] for query_id in expected_ids]
 
 
-def stage_arrays(rows, logits, ids, temperature):
+def stage_arrays(rows, logits, ids, temperature, split_name=None, progress_every=10):
     id_to_index = {value: index for index, value in enumerate(ids)}
     ranks = np.empty(len(rows), dtype=np.int32); entropy = np.empty(len(rows)); margin = np.empty(len(rows))
+    started = time.monotonic()
     for position, row in enumerate(rows):
         scores = np.asarray(logits[int(row["_row_index"])], dtype=float) / temperature
         scores -= scores.max(); probabilities = np.exp(scores); probabilities /= probabilities.sum()
@@ -64,6 +94,16 @@ def stage_arrays(rows, logits, ids, temperature):
         ranks[position] = int(np.where(order == true_index)[0][0]) + 1
         entropy[position] = -(probabilities * np.log(np.clip(probabilities, 1e-12, 1))).sum()
         largest = np.partition(probabilities, -2)[-2:]; margin[position] = largest.max() - largest.min()
+        completed = position + 1
+        if split_name and (completed == len(rows) or completed % max(progress_every, 1) == 0):
+            elapsed = time.monotonic() - started
+            rate = completed / max(elapsed, 1e-12)
+            print(json.dumps({"phase": "routing-stage-arrays", "split": split_name,
+                              "completed": completed, "total": len(rows),
+                              "percent": 100.0 * completed / max(len(rows), 1),
+                              "elapsed_seconds": elapsed,
+                              "eta_seconds": (len(rows) - completed) / max(rate, 1e-12)}),
+                  flush=True)
     return ranks, entropy, margin
 
 
@@ -156,8 +196,10 @@ def evaluate(args):
     val_query_ids = [str(row["query_id"]) for row in val_rows]; test_query_ids = [str(row["query_id"]) for row in test_rows]
     val_always = load_always(validation_always_path, val_query_ids)
     test_always = load_always(test_always_path, test_query_ids)
-    val_stage, val_entropy, val_margin = stage_arrays(val_rows, val_logits, val_ids, temperature)
-    test_stage, test_entropy, test_margin = stage_arrays(test_rows, test_logits, test_ids, temperature)
+    val_stage, val_entropy, val_margin = stage_arrays(
+        val_rows, val_logits, val_ids, temperature, split_name="validation")
+    test_stage, test_entropy, test_margin = stage_arrays(
+        test_rows, test_logits, test_ids, temperature, split_name="test")
     val_llm = np.asarray([row["true_rank"] for row in val_always], dtype=np.int32)
     test_llm = np.asarray([row["true_rank"] for row in test_always], dtype=np.int32)
     budget = float(config["target_call_rate"]); quantiles = int(config["auto_quantile_candidates"])
@@ -178,58 +220,88 @@ def evaluate(args):
             budget_sweep[str(candidate_budget)][kind] = metrics(routed(test_stage, test_llm, calls), calls, test_always)
     primary = selected_by_budget[str(budget)]
     entropy_threshold = primary["entropy"]; margin_threshold = primary["margin"]
-    masks = {"never": np.zeros(len(test_rows), dtype=bool), "always": np.ones(len(test_rows), dtype=bool),
-             "entropy": budget_capped_mask("entropy", test_entropy, entropy_threshold, budget),
-             "margin": budget_capped_mask("margin", test_margin, margin_threshold, budget)}
-    random_count = int(masks["entropy"].sum())
-    random_mask = np.zeros(len(test_rows), dtype=bool)
-    random_mask[np.random.default_rng(args.seed).permutation(len(test_rows))[:random_count]] = True
-    masks["random-budget-matched"] = random_mask
+    deterministic_masks = {
+        "never": np.zeros(len(test_rows), dtype=bool),
+        "always": np.ones(len(test_rows), dtype=bool),
+        "entropy": budget_capped_mask("entropy", test_entropy, entropy_threshold, budget),
+        "margin": budget_capped_mask("margin", test_margin, margin_threshold, budget),
+    }
+    random_count = int(deterministic_masks["entropy"].sum())
     oracle = oracle_mask(test_stage, test_llm, budget)
-    summaries = {}; output = Path(args.output_dir); output.mkdir(parents=True, exist_ok=True)
-    for policy in POLICIES:
-        ranks = routed(test_stage, test_llm, masks[policy]); summaries[policy] = metrics(ranks, masks[policy], test_always)
-        np.savez_compressed(output / f"{policy}.test.predictions.npz", query_id=np.asarray(test_query_ids),
-                            user_id=np.asarray([str(row.get("user_id", "")) for row in test_rows]),
-                            labels=np.arange(len(test_rows)), query_index=np.arange(len(test_rows)),
-                            ranks=ranks, called_llm=masks[policy].astype(np.int8))
     oracle_metrics = metrics(routed(test_stage, test_llm, oracle), oracle, test_always)
-    np.savez_compressed(output / "routing_diagnostics.test.npz", query_id=np.asarray(test_query_ids),
-                        stage_ranks=test_stage, llm_ranks=test_llm, entropy=test_entropy, margin=test_margin,
-                        oracle_called=oracle.astype(np.int8))
     validation_selection = {}
     for kind, uncertainty, threshold in (("entropy", val_entropy, entropy_threshold),
                                          ("margin", val_margin, margin_threshold)):
         calls = threshold_mask(kind, uncertainty, threshold)
         validation_selection[kind] = {"threshold": threshold, "call_rate": float(calls.mean()),
                                       "metrics": metrics(routed(val_stage, val_llm, calls), calls, val_always)}
-    payload = {"rq": "RQ8", "seed": args.seed, "fit_split": "validation", "evaluation_split": "test",
-               "limit": args.limit, "target_call_rate": budget,
-               "routing_mode": "counterfactual_replay_from_always_response_bank",
-               "physical_requests_during_routing": 0,
-               "reported_request_cost": "simulated_deployment_budget",
-               "test_budget_enforcement": budget_enforcement,
-               "provenance": {
-                   "routing_config_sha256": sha256_file(config_path),
-                   "calibration_sha256": sha256_file(calibration_path),
-                   "validation_input_sha256": sha256_file(validation_path),
-                   "test_input_sha256": sha256_file(test_path),
-                   "validation_always_sha256": sha256_file(validation_always_path),
-                   "test_always_sha256": sha256_file(test_always_path),
-               },
-               "selected_thresholds": {"entropy": entropy_threshold, "margin": margin_threshold},
-               "validation_selection": validation_selection, "budget_sweep": budget_sweep,
-               "oracle_upper_bound": oracle_metrics,
-               "random_matched_to": "entropy test call rate", "metrics": summaries}
-    (output / "rq8.metrics.json").write_text(json.dumps(payload, indent=2) + "\n")
-    print(json.dumps(payload, indent=2)); return payload
+    provenance = {
+        "routing_config_sha256": sha256_file(config_path),
+        "calibration_sha256": sha256_file(calibration_path),
+        "validation_input_sha256": sha256_file(validation_path),
+        "test_input_sha256": sha256_file(test_path),
+        "validation_always_sha256": sha256_file(validation_always_path),
+        "test_always_sha256": sha256_file(test_always_path),
+    }
+    requested_seeds = getattr(args, "seeds", None)
+    seeds = list(dict.fromkeys(int(value) for value in requested_seeds)) \
+        if requested_seeds else [int(args.seed)]
+    output_root = getattr(args, "output_root", None)
+    output_dir = getattr(args, "output_dir", None)
+    if requested_seeds and (not output_root or output_dir):
+        raise ValueError("batch routing requires --output-root and must not use --output-dir")
+    if not requested_seeds and (not output_dir or output_root):
+        raise ValueError("single-seed routing requires --output-dir and must not use --output-root")
+    test_ids_array = np.asarray(test_query_ids)
+    test_users_array = np.asarray([str(row.get("user_id", "")) for row in test_rows])
+    payloads = []
+    for seed in seeds:
+        random_mask = np.zeros(len(test_rows), dtype=bool)
+        selected = np.random.default_rng(seed).permutation(len(test_rows))[:random_count]
+        random_mask[selected] = True
+        masks = dict(deterministic_masks); masks["random-budget-matched"] = random_mask
+        summaries = {}
+        output = ((Path(output_root) / f"seed-{seed}") if requested_seeds else Path(output_dir))
+        output.mkdir(parents=True, exist_ok=True)
+        for policy in POLICIES:
+            ranks = routed(test_stage, test_llm, masks[policy])
+            summaries[policy] = metrics(ranks, masks[policy], test_always)
+            save_npz_atomic(
+                output / f"{policy}.test.predictions.npz",
+                query_id=test_ids_array, user_id=test_users_array,
+                labels=np.arange(len(test_rows)), query_index=np.arange(len(test_rows)),
+                ranks=ranks, called_llm=masks[policy].astype(np.int8))
+        save_npz_atomic(
+            output / "routing_diagnostics.test.npz", query_id=test_ids_array,
+            stage_ranks=test_stage, llm_ranks=test_llm, entropy=test_entropy,
+            margin=test_margin, oracle_called=oracle.astype(np.int8))
+        payload = {
+            "rq": "RQ8", "seed": seed, "fit_split": "validation",
+            "evaluation_split": "test", "limit": args.limit,
+            "target_call_rate": budget,
+            "routing_mode": "counterfactual_replay_from_always_response_bank",
+            "physical_requests_during_routing": 0,
+            "reported_request_cost": "simulated_deployment_budget",
+            "test_budget_enforcement": budget_enforcement,
+            "provenance": provenance,
+            "selected_thresholds": {"entropy": entropy_threshold, "margin": margin_threshold},
+            "validation_selection": validation_selection, "budget_sweep": budget_sweep,
+            "oracle_upper_bound": oracle_metrics,
+            "random_matched_to": "entropy test call rate", "metrics": summaries,
+        }
+        write_json_atomic(output / "rq8.metrics.json", payload)
+        payloads.append(payload)
+        print(json.dumps({"phase": "routing-seed-complete", "seed": seed,
+                          "output": str(output), "random_selected": random_count}), flush=True)
+    return payloads if requested_seeds else payloads[0]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RQ8 uncertainty-aware LLM routing from an immutable Always cache")
     parser.add_argument("--validation", required=True); parser.add_argument("--test", required=True)
     parser.add_argument("--validation-always", required=True); parser.add_argument("--test-always", required=True)
-    parser.add_argument("--calibration", required=True); parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--calibration", required=True); parser.add_argument("--output-dir")
+    parser.add_argument("--output-root"); parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--config", default="configs/beliefmove_evo/routing.json")
     parser.add_argument("--limit", type=int); parser.add_argument("--seed", type=int, default=42)
     evaluate(parser.parse_args())

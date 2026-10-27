@@ -321,6 +321,8 @@ def _validate_routing_unit(folder: Path, seeds: list[int], direct: dict, limit: 
         if not metric_path.is_file():
             raise FileNotFoundError(f"missing required routing artifact: {metric_path}")
         payload = json.loads(metric_path.read_text(encoding="utf-8"))
+        if payload.get("seed") != seed:
+            raise ValueError(f"routing seed/directory mismatch: {metric_path}")
         if payload.get("limit") != limit or payload.get("fit_split") != "validation" \
                 or payload.get("evaluation_split") != "test":
             raise ValueError(f"routing split/limit mismatch: {metric_path}")
@@ -374,6 +376,11 @@ def _validate_routing_unit(folder: Path, seeds: list[int], direct: dict, limit: 
         selected = int(np.sum(entropy["called_llm"])); random_selected = int(np.sum(random["called_llm"]))
         if random_selected != selected:
             raise ValueError(f"random routing request budget differs from entropy: seed={seed}")
+        expected_random = np.zeros(len(expected_ids), dtype=bool)
+        indices = np.random.default_rng(seed).permutation(len(expected_ids))[:selected]
+        expected_random[indices] = True
+        if not np.array_equal(random["called_llm"].astype(bool), expected_random):
+            raise ValueError(f"random routing mask does not match declared seed: seed={seed}")
         if entropy_count is None:
             entropy_count = selected
         elif selected != entropy_count:

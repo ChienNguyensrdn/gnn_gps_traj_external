@@ -1,12 +1,17 @@
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
 from hybrid.rq8_routing import (
+    POLICIES,
     budget_capped_mask,
     choose_threshold,
+    evaluate,
     load_always,
     metrics,
     oracle_mask,
@@ -71,6 +76,72 @@ class RQ8RoutingTest(unittest.TestCase):
             path.write_text('{"query_id":"q1"}\n{"query_id":"q2"}\n', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "unexpected query_id=q2"):
                 load_always(path, ["q1"])
+
+    def test_batch_seeds_compute_stage_arrays_once_per_split(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "routing.json"
+            config.write_text(json.dumps({
+                "target_call_rate": 0.25,
+                "auto_quantile_candidates": 4,
+                "entropy_thresholds": [],
+                "margin_thresholds": [],
+                "call_budgets": [0.25],
+                "test_budget_enforcement": "deterministic_uncertainty_rank_hard_cap",
+            }))
+            calibration = root / "temperature.json"
+            calibration.write_text(json.dumps({"temperature": {"temperature": 1.0}}))
+            validation = root / "validation.jsonl"; validation.write_text("{}\n")
+            test = root / "test.jsonl"; test.write_text("{}\n")
+            validation_always = root / "validation.always.jsonl"
+            test_always = root / "test.always.jsonl"
+            rows = [{"query_id": f"q{index}", "user_id": f"u{index}"}
+                    for index in range(4)]
+            always_rows = [dict(row, true_rank=1, latency_seconds=1.0,
+                                input_tokens=10, output_tokens=2, api_calls=1,
+                                valid=True) for row in rows]
+            payload = "".join(json.dumps(row) + "\n" for row in always_rows)
+            validation_always.write_text(payload); test_always.write_text(payload)
+            split = (rows, np.zeros((4, 2)), ["a", "b"])
+            val_arrays = (np.asarray([1, 2, 3, 4]), np.asarray([0.1, 0.2, 0.8, 0.9]),
+                          np.asarray([0.9, 0.8, 0.2, 0.1]))
+            test_arrays = (np.asarray([1, 2, 3, 4]), np.asarray([0.1, 0.2, 0.8, 0.9]),
+                           np.asarray([0.9, 0.8, 0.2, 0.1]))
+            args = SimpleNamespace(
+                config=str(config), calibration=str(calibration), validation=str(validation),
+                test=str(test), validation_always=str(validation_always),
+                test_always=str(test_always), limit=4, seed=42,
+                seeds=[42, 43], output_root=str(root / "routing"), output_dir=None)
+            with patch("hybrid.rq8_routing.load_split", side_effect=[split, split]), \
+                    patch("hybrid.rq8_routing.stage_arrays",
+                          side_effect=[val_arrays, test_arrays]) as mocked_stage:
+                result = evaluate(args)
+            self.assertEqual(mocked_stage.call_count, 2)
+            self.assertEqual([row["seed"] for row in result], [42, 43])
+            deterministic = []
+            for seed in (42, 43):
+                folder = root / f"routing/seed-{seed}"
+                self.assertTrue((folder / "rq8.metrics.json").is_file())
+                deterministic.append(np.load(folder / "entropy.test.predictions.npz")["called_llm"])
+                random = np.load(folder / "random-budget-matched.test.predictions.npz")["called_llm"]
+                expected = np.zeros(4, dtype=np.int8)
+                expected[np.random.default_rng(seed).permutation(4)[:1]] = 1
+                np.testing.assert_array_equal(random, expected)
+            np.testing.assert_array_equal(deterministic[0], deterministic[1])
+            single_args = SimpleNamespace(**{**vars(args), "seeds": None,
+                                             "output_root": None,
+                                             "output_dir": str(root / "single"),
+                                             "seed": 42})
+            with patch("hybrid.rq8_routing.load_split", side_effect=[split, split]), \
+                    patch("hybrid.rq8_routing.stage_arrays",
+                          side_effect=[val_arrays, test_arrays]) as single_stage:
+                evaluate(single_args)
+            self.assertEqual(single_stage.call_count, 2)
+            for policy in POLICIES:
+                batch_arrays = np.load(root / f"routing/seed-42/{policy}.test.predictions.npz")
+                single_arrays = np.load(root / f"single/{policy}.test.predictions.npz")
+                for key in ("query_id", "user_id", "ranks", "called_llm"):
+                    np.testing.assert_array_equal(batch_arrays[key], single_arrays[key])
 
 
 if __name__ == "__main__": unittest.main()
