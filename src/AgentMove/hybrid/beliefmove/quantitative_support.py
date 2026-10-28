@@ -429,7 +429,7 @@ def validate_test_protocol_lock(
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     if not isinstance(lock, dict):
         raise ValueError(f"invalid protocol lock object: {lock_path}")
-    if lock.get("version") != "beliefmove.protocol-lock.v1":
+    if lock.get("version") != "beliefmove.protocol-lock.v2":
         raise ValueError(f"unsupported protocol lock version: {lock.get('version')!r}")
     if lock.get("pilot_gate") != "ready":
         raise RuntimeError("test export is blocked because pilot_gate is not ready")

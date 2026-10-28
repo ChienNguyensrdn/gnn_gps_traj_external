@@ -184,7 +184,7 @@ class BeliefMovePilotTests(unittest.TestCase):
             for split, suffixes in selected.items()
         }
         selection = {
-            "version": "fixture",
+            "version": "beliefmove.teacher-cache.v2",
             "dataset": "tist2015",
             "unit": "Tokyo",
             "cache_tag": tag,
@@ -234,6 +234,12 @@ class BeliefMovePilotTests(unittest.TestCase):
                     "split": split,
                     "source_hash": digest(query),
                     "prompt_hash": belief.prompt_hash,
+                    "response_format_hash": digest(
+                        {
+                            "schema": "beliefmove.teacher-response-schema.v2",
+                            "candidate_regions": query["candidate_regions"],
+                        }
+                    ),
                     "model_hash": belief.model_hash,
                     "dataset_hash": self.dataset_hash,
                     "ontology_hash": ontology_hash(),
@@ -242,11 +248,38 @@ class BeliefMovePilotTests(unittest.TestCase):
                     "raw_response": raw_response,
                     "raw_response_hash": hash_text(raw_response),
                     "raw_valid": True,
+                    "usable_output": True,
                     "fallback": False,
                     "transport_error": "",
+                    "normalization": {
+                        "version": "beliefmove.teacher-l1-weights.v1",
+                        "raw_sums": {
+                            "activity": 1.0,
+                            "intent": 1.0,
+                            "destination": 1.0,
+                            "next_region": 1.0,
+                        },
+                        "applied": False,
+                        "canonical_probability_error": 0.0,
+                    },
                     "belief": belief.to_dict(),
                 }
-                attempts.append({key: record[key] for key in ("query_id", "split")})
+                attempts.append(
+                    {
+                        key: record[key]
+                        for key in (
+                            "query_id",
+                            "split",
+                            "source_hash",
+                            "prompt_hash",
+                            "response_format_hash",
+                            "model_hash",
+                            "dataset_hash",
+                            "ontology_hash",
+                            "physical_request",
+                        )
+                    }
+                )
                 beliefs.append(record)
         manifest = {
             **selection,
@@ -383,7 +416,112 @@ class BeliefMovePilotTests(unittest.TestCase):
         rows = [json.loads(line) for line in beliefs_path.read_text().splitlines()]
         rows[0]["raw_valid"] = False
         self._write_jsonl(beliefs_path, rows)
-        with self.assertRaisesRegex(PilotEvaluationError, "invalid/fallback/transport-error"):
+        with self.assertRaisesRegex(
+            PilotEvaluationError,
+            "usable_output/raw_valid mismatch|invalid/fallback/transport-error",
+        ):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_legacy_teacher_cache_version_fails_closed(self) -> None:
+        for name in ("selection_manifest.json", "manifest.json"):
+            path = self.base / name
+            payload = json.loads(path.read_text())
+            payload["version"] = "beliefmove.teacher-cache.v1"
+            self._write_json(path, payload)
+        with self.assertRaisesRegex(PilotEvaluationError, "teacher-cache.v2"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_missing_response_format_provenance_fails_closed(self) -> None:
+        for name in ("attempts.jsonl", "beliefs.jsonl"):
+            path = self.base / name
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            rows[0].pop("response_format_hash")
+            self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "response_format_hash"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_missing_normalization_provenance_fails_closed(self) -> None:
+        path = self.base / "beliefs.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[0].pop("normalization")
+        self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "missing normalization provenance"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_legacy_normalization_version_fails_closed(self) -> None:
+        path = self.base / "beliefs.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[0]["normalization"]["version"] = "beliefmove.teacher-l1-weights.v0"
+        self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "normalization version mismatch"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_usable_output_must_match_raw_valid(self) -> None:
+        path = self.base / "beliefs.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[0]["usable_output"] = False
+        self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "usable_output/raw_valid mismatch"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_canonical_probability_error_must_be_bounded(self) -> None:
+        path = self.base / "beliefs.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[0]["normalization"]["canonical_probability_error"] = 1e-4
+        self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "canonical probability error"):
+            evaluate_pilot(
+                self.root,
+                self.base,
+                self.repeats,
+                ontology_labels_root=self.labels_root,
+                write=False,
+            )
+
+    def test_repeat_response_format_hash_must_match_base(self) -> None:
+        replacement = "a" * 64
+        for name in ("attempts.jsonl", "beliefs.jsonl"):
+            path = self.repeats[0] / name
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            rows[0]["response_format_hash"] = replacement
+            self._write_jsonl(path, rows)
+        with self.assertRaisesRegex(PilotEvaluationError, "response_format_hash"):
             evaluate_pilot(
                 self.root,
                 self.base,

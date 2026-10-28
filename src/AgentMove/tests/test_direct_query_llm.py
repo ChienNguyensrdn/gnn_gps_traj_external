@@ -41,15 +41,16 @@ class FailingWrapper(FakeWrapper):
 
 class FakeSDKClient:
     def __init__(self):
-        self.max_retries = None; self.calls = 0
+        self.max_retries = None; self.calls = 0; self.requests = []
         self.chat = SimpleNamespace(completions=self)
 
     def with_options(self, max_retries):
         self.max_retries = max_retries
         return self
 
-    def create(self, **_kwargs):
+    def create(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         message = SimpleNamespace(content='{"ranking":["a"]}')
         usage = SimpleNamespace(prompt_tokens=7, completion_tokens=2)
         return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
@@ -163,9 +164,44 @@ class DirectQueryLLMTests(unittest.TestCase):
         wrapper.reset_call_stats()
         self.assertIn("ranking", wrapper.get_response_once("prompt"))
         self.assertEqual(client.max_retries, 0); self.assertEqual(client.calls, 1)
+        self.assertNotIn("response_format", client.requests[0])
         stats = wrapper.get_call_stats()
         self.assertEqual(len(stats), 1); self.assertEqual(stats[0]["physical_attempts"], 1)
         self.assertEqual(stats[0]["token_source"], "api")
+
+    def test_wrapper_one_call_forwards_response_format_exactly(self):
+        client = FakeSDKClient(); wrapper = LLMWrapper.__new__(LLMWrapper)
+        wrapper.model_name = "qwen2:7b"; wrapper.api_model_name = "qwen2:7b"
+        wrapper.client = client
+        wrapper.hyperparams = {"temperature": 0.0, "max_tokens": 32,
+                               "max_input_tokens": 2000}
+        wrapper.reset_call_stats()
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "beliefmove_teacher",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {"confidence": {"type": "number"}},
+                    "required": ["confidence"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+        self.assertIn(
+            "ranking",
+            wrapper.get_response_once("prompt", response_format=response_format),
+        )
+
+        self.assertEqual(client.max_retries, 0)
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(len(client.requests), 1)
+        self.assertIs(client.requests[0]["response_format"], response_format)
+        stats = wrapper.get_call_stats()
+        self.assertEqual(len(stats), 1)
+        self.assertEqual(stats[0]["physical_attempts"], 1)
 
     def test_transport_failure_commits_q0_fallback_and_resume_does_not_call(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -11,6 +11,9 @@
 | Dataset/split hashes | TODO |
 | Teacher model/digest | TODO |
 | Prompt/ontology hash | TODO |
+| Response schema version / response-format hash | TODO |
+| Normalization version | TODO |
+| Artifact namespace | `results/beliefmove-faithful/v2/` |
 | Seeds | 42, 43, 44 |
 | Estimand | Next location conditional on observed prefix and known prediction timestamp |
 

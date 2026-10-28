@@ -32,7 +32,9 @@ from .ontology import ACTIVITY_ONTOLOGY, DESTINATION_ONTOLOGY, ontology_hash
 from .schema import StructuredBelief, hash_text
 
 
-PILOT_EVALUATION_VERSION = "beliefmove.pilot-evaluation.v1"
+PILOT_EVALUATION_VERSION = "beliefmove.pilot-evaluation.v2"
+TEACHER_CACHE_VERSION = "beliefmove.teacher-cache.v2"
+TEACHER_NORMALIZATION_VERSION = "beliefmove.teacher-l1-weights.v1"
 ONTOLOGY_LABEL_VERSION = "beliefmove.ontology-labels.v1"
 ALPHA_GRID = (0.0, 0.25, 0.5, 0.75, 1.0)
 PILOT_SMOOTHING = 1.0
@@ -42,6 +44,8 @@ _DISTRIBUTION_FIELDS = ("activity", "intent", "destination", "next_region")
 _VALIDATION_PARTITION_VERSION = "beliefmove.pilot-validation-partition.v1"
 _BASE_REQUESTED_BY_SPLIT = {"train": 500, "validation": 200}
 _REPEAT_REQUESTED_BY_SPLIT = {"train": 0, "validation": 50}
+_CANONICAL_PROBABILITY_TOLERANCE = 1e-12
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class PilotEvaluationError(ValueError):
@@ -121,6 +125,116 @@ def _strict_count(value: Any, *, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise PilotEvaluationError(f"{name} must be a non-negative integer")
     return value
+
+
+def _teacher_record_contract(
+    record: Mapping[str, Any],
+    belief: StructuredBelief,
+    *,
+    role: str,
+    query_id: str,
+) -> None:
+    """Validate the v2 structured-output and canonicalization provenance."""
+
+    response_format_hash = record.get("response_format_hash")
+    if not isinstance(response_format_hash, str) or _SHA256_RE.fullmatch(response_format_hash) is None:
+        raise PilotEvaluationError(
+            f"{role} belief has invalid response_format_hash for query={query_id}"
+        )
+
+    raw_valid = record.get("raw_valid")
+    usable_output = record.get("usable_output")
+    fallback = record.get("fallback")
+    transport_error = record.get("transport_error")
+    if type(raw_valid) is not bool or type(usable_output) is not bool or type(fallback) is not bool:
+        raise PilotEvaluationError(
+            f"{role} belief has non-boolean validity provenance for query={query_id}"
+        )
+    if usable_output is not raw_valid:
+        raise PilotEvaluationError(
+            f"{role} belief usable_output/raw_valid mismatch for query={query_id}"
+        )
+    if not isinstance(transport_error, str):
+        raise PilotEvaluationError(
+            f"{role} belief has invalid transport provenance for query={query_id}"
+        )
+    if raw_valid and (fallback or transport_error):
+        raise PilotEvaluationError(
+            f"{role} usable belief is marked fallback/transport-error for query={query_id}"
+        )
+    if not raw_valid and not fallback:
+        raise PilotEvaluationError(
+            f"{role} unusable belief is not marked fallback for query={query_id}"
+        )
+
+    normalization = record.get("normalization")
+    if not isinstance(normalization, Mapping):
+        raise PilotEvaluationError(
+            f"{role} belief is missing normalization provenance for query={query_id}"
+        )
+    if normalization.get("version") != TEACHER_NORMALIZATION_VERSION:
+        raise PilotEvaluationError(
+            f"{role} belief normalization version mismatch for query={query_id}"
+        )
+    if type(normalization.get("applied")) is not bool:
+        raise PilotEvaluationError(
+            f"{role} belief normalization.applied must be boolean for query={query_id}"
+        )
+    raw_sums = normalization.get("raw_sums")
+    if not isinstance(raw_sums, Mapping):
+        raise PilotEvaluationError(
+            f"{role} belief normalization.raw_sums is invalid for query={query_id}"
+        )
+    if raw_valid:
+        if set(raw_sums) != set(_DISTRIBUTION_FIELDS):
+            raise PilotEvaluationError(
+                f"{role} belief normalization.raw_sums support mismatch for query={query_id}"
+            )
+        parsed_sums: list[float] = []
+        for field in _DISTRIBUTION_FIELDS:
+            raw_sum = raw_sums[field]
+            if isinstance(raw_sum, bool) or not isinstance(raw_sum, (int, float)):
+                raise PilotEvaluationError(
+                    f"{role} belief normalization raw sum is non-numeric for query={query_id}"
+                )
+            value = float(raw_sum)
+            if not math.isfinite(value) or value <= 0.0:
+                raise PilotEvaluationError(
+                    f"{role} belief normalization raw sum is not positive finite for query={query_id}"
+                )
+            parsed_sums.append(value)
+        expected_applied = any(
+            not math.isclose(value, 1.0, rel_tol=0.0, abs_tol=1e-12)
+            for value in parsed_sums
+        )
+        if normalization.get("applied") is not expected_applied:
+            raise PilotEvaluationError(
+                f"{role} belief normalization.applied is inconsistent for query={query_id}"
+            )
+    elif raw_sums or normalization.get("applied") is not False:
+        raise PilotEvaluationError(
+            f"{role} fallback belief has invalid normalization provenance for query={query_id}"
+        )
+
+    declared_error = normalization.get("canonical_probability_error")
+    if isinstance(declared_error, bool) or not isinstance(declared_error, (int, float)):
+        raise PilotEvaluationError(
+            f"{role} belief canonical probability error is non-numeric for query={query_id}"
+        )
+    declared_error = float(declared_error)
+    observed_error = max(
+        abs(math.fsum(getattr(belief, field).values()) - 1.0)
+        for field in _DISTRIBUTION_FIELDS
+    )
+    if (
+        not math.isfinite(declared_error)
+        or declared_error < 0.0
+        or declared_error > _CANONICAL_PROBABILITY_TOLERANCE
+        or observed_error > _CANONICAL_PROBABILITY_TOLERANCE
+    ):
+        raise PilotEvaluationError(
+            f"{role} belief canonical probability error exceeds tolerance for query={query_id}"
+        )
 
 
 def _validation_partition(query_ids: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -344,6 +458,9 @@ def _cache(
     attempts = _index(_read_jsonl(attempts_path), attempts_path)
     beliefs = _index(_read_jsonl(beliefs_path), beliefs_path)
 
+    if selection.get("version") != TEACHER_CACHE_VERSION or manifest.get("version") != TEACHER_CACHE_VERSION:
+        raise PilotEvaluationError(f"{role} cache is not a {TEACHER_CACHE_VERSION} artifact")
+
     for key in ("dataset", "unit", "dataset_hash", "ontology_hash"):
         expected = prepare_manifest.get(key)
         if selection.get(key) != expected:
@@ -447,6 +564,22 @@ def _cache(
             or belief.model_hash != record.get("model_hash")
         ):
             raise PilotEvaluationError(f"{role} structured belief contract mismatch for query={query_id}")
+        attempt = attempts[query_id]
+        for key in (
+            "split",
+            "source_hash",
+            "prompt_hash",
+            "response_format_hash",
+            "model_hash",
+            "dataset_hash",
+            "ontology_hash",
+            "physical_request",
+        ):
+            if attempt.get(key) != record.get(key):
+                raise PilotEvaluationError(
+                    f"{role} attempt/belief provenance mismatch for query={query_id} field={key}"
+                )
+        _teacher_record_contract(record, belief, role=role, query_id=query_id)
         if bool(record.get("fallback")) and belief.confidence != 0.0:
             raise PilotEvaluationError(f"{role} fallback belief must have zero confidence")
         if role.startswith("repeat") and (
@@ -696,7 +829,14 @@ def evaluate_pilot(
         for query_id in repeat_ids:
             base_record = base_beliefs[query_id]
             repeat_record = beliefs[query_id]
-            for key in ("source_hash", "prompt_hash", "model_hash", "dataset_hash", "ontology_hash"):
+            for key in (
+                "source_hash",
+                "prompt_hash",
+                "response_format_hash",
+                "model_hash",
+                "dataset_hash",
+                "ontology_hash",
+            ):
                 if repeat_record.get(key) != base_record.get(key):
                     raise PilotEvaluationError(
                         f"repeat-{index} belief differs from base for query={query_id} field={key}"

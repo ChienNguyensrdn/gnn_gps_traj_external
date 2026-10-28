@@ -189,7 +189,7 @@ class BeliefMoveQuantitativeSupportTests(unittest.TestCase):
                 export(test_args)
             self.assertFalse(test_output.exists())
 
-            protocol = {"protocol_name": "test", "version": "v1"}
+            protocol = {"protocol_name": "test", "version": "v2"}
             protocol_path = root / "protocol.json"
             protocol_path.write_text(json.dumps(protocol), encoding="utf-8")
             protocol_hash = hashlib.sha256(
@@ -198,7 +198,7 @@ class BeliefMoveQuantitativeSupportTests(unittest.TestCase):
             lock_path = root / "locks" / "protocol_lock.json"
             lock_path.parent.mkdir(parents=True)
             lock_payload = {
-                "version": "beliefmove.protocol-lock.v1",
+                "version": "beliefmove.protocol-lock.v2",
                 "protocol_hash": protocol_hash,
                 "pilot_report_hash": "b" * 64,
                 "pilot_gate": "incomplete",

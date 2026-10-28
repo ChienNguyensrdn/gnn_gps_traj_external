@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-BELIEFMOVE_ROOT="${BELIEFMOVE_ROOT:-results/beliefmove-faithful/v1}"
+BELIEFMOVE_ROOT="${BELIEFMOVE_ROOT:-results/beliefmove-faithful/v2}"
 BELIEFMOVE_DATASETS="${BELIEFMOVE_DATASETS:-tist2015 www2019 yjmob100k}"
 TIST_CITIES="${TIST_CITIES:-Tokyo Nairobi NewYork Sydney CapeTown Paris Beijing Mumbai SanFrancisco London SaoPaulo Moscow}"
 BELIEFMOVE_SEEDS="${BELIEFMOVE_SEEDS:-42 43 44}"

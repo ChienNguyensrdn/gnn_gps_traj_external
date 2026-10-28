@@ -30,6 +30,11 @@ Ma trận đối chiếu từng yêu cầu của tài liệu với code/gate n�
   labels, evaluator `pilot_evaluation.json`, pilot-report validator và
   protocol-lock validator, cùng exporter/binder support top-k theo frozen
   quantitative checkpoint cho train/validation.
+- Teacher-response contract v2 dùng strict JSON Schema với đúng support đã
+  khóa. LLM trả về trọng số tương đối hữu hạn, không âm và có tổng dương;
+  collector mới là biên tin cậy thực hiện chuẩn hóa L1 xác định. Mỗi record
+  lưu version/hash của response schema, normalization contract và response
+  format để không thể resume nhầm cache v1.
 - Chưa có: bộ fit/evaluate hoàn chỉnh cho M1–M5, quantitative-teacher
   distillation vào student, test-panel bank, controls và aggregator confirmatory. Vì vậy
   `teacher-offline` và các action confirmatory vẫn bị khóa fail-closed. Không
@@ -136,7 +141,10 @@ count của teacher được nhân với confidence; fallback có confidence 0 n
 
 Ontology activity/intent phải cố định trước khi gọi LLM. Teacher output gồm
 `activity`, `intent`, `destination`, `next_region`, `confidence`; mọi phân phối
-phải hữu hạn, không âm và tổng bằng 1.
+thô phải có đúng support đã khóa, hữu hạn, không âm và có tổng dương. Collector
+chuẩn hóa L1 từng phân phối; belief canonical sau chuẩn hóa mới phải có tổng
+bằng 1 (sai số tối đa $10^{-6}$). Không sửa hoặc tái sử dụng cache v1 để tạo
+cache v2.
 
 ## 3. Split và chống leakage
 
@@ -167,8 +175,16 @@ cd src/AgentMove
 ./phase3_beliefmove/scripts/run.sh prepare
 
 # 3) Smoke: 20 train + 20 validation cho Tokyo/Shanghai/YJMob; không đọc test.
+#    Bắt buộc dùng full model digest của đúng Ollama server. Sau ba unit,
+#    action này tự sinh smoke_report.json và fail-closed nếu một unit không đạt.
 OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
   ./phase3_beliefmove/scripts/run.sh smoke
+
+# Có thể tái kiểm tra report mà không gọi LLM.
+OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
+  ./phase3_beliefmove/scripts/run.sh smoke-report
 
 # 4) Pilot chỉ dùng train/validation; mỗi unit gồm base 500/200 và 3 repeat
 #    validation 50-query. Alpha chọn trên một nửa validation cố định và chỉ
@@ -234,21 +250,25 @@ BELIEFMOVE_DATASETS=tist2015 TIST_CITIES="Tokyo NewYork" \
 ## 5. Artifacts
 
 ```text
-results/beliefmove-faithful/v1/<dataset>/<unit>/
+results/beliefmove-faithful/v2/<dataset>/<unit>/
   manifests/
   representation/
   teacher/<model-slug>/<model-digest>/<prompt-contract-hash>/<cache-tag>/<selection-hash>/
   models/<variant>/seed-<seed>/
   online/<variant>/seed-<seed>/
   raw/
-results/beliefmove-faithful/v1/aggregated/
+results/beliefmove-faithful/v2/aggregated/
 ```
 
 Mỗi run manifest phải ghi seed, git commit, dataset hash, split hashes, config
 hash, teacher model digest, prompt/ontology hash, physical request count và
-hardware.
+hardware. Teacher cache v2 còn phải ghi `prompt_version`,
+`response_schema_version`, `normalization_version`, `prompt_contract_hash` và
+`response_format_hash`; raw response, canonical belief và metadata chuẩn hóa
+được giữ riêng để audit.
 
-Với cache `official`, bắt buộc truyền full model digest:
+Mọi cache gọi LLM (`smoke`, `pilot`, repeat và `official`) phải truyền full
+model digest 64-hex lấy từ chính Ollama server đang phục vụ model:
 
 ```bash
 OLLAMA_MODEL=qwen2.5:7b \

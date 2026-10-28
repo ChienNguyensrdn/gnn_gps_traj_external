@@ -44,8 +44,10 @@ from .pilot import PilotEvaluationError, evaluate_pilot
 
 OTHER_REGION = "__OTHER__"
 PREPARE_VERSION = "beliefmove.prepare.v1"
-TEACHER_VERSION = "beliefmove.teacher-cache.v1"
-PROMPT_VERSION = "beliefmove.structured-teacher.v1"
+TEACHER_VERSION = "beliefmove.teacher-cache.v2"
+PROMPT_VERSION = "beliefmove.structured-teacher.v2"
+RESPONSE_SCHEMA_VERSION = "beliefmove.teacher-response-schema.v2"
+NORMALIZATION_VERSION = "beliefmove.teacher-l1-weights.v1"
 FORBIDDEN_TARGET_KEYS = frozenset(
     {
         "true_id",
@@ -66,6 +68,7 @@ PILOT_UNITS = {
 PILOT_BASE_REQUESTED = {"train": 500, "validation": 200}
 PILOT_REPEAT_REQUESTED = {"train": 0, "validation": 50}
 PILOT_REPEAT_COUNT = 3
+SMOKE_REQUESTED = {"train": 20, "validation": 20}
 FUTURE_COMMANDS = {
     "fit",
     "quantitative-teacher",
@@ -594,10 +597,12 @@ def build_teacher_prompt(query: Mapping[str, Any]) -> str:
         raise ValueError(f"teacher query contains forbidden target fields: {sorted(overlap)}")
     support = [str(value) for value in query["candidate_regions"]]
     schema = {
-        "activity": {label: "probability" for label in ACTIVITY_ONTOLOGY},
-        "intent": {label: "probability" for label in INTENT_ONTOLOGY},
-        "destination": {label: "probability" for label in DESTINATION_ONTOLOGY},
-        "next_region": {label: "probability" for label in support},
+        "activity": {label: "non-negative relative weight" for label in ACTIVITY_ONTOLOGY},
+        "intent": {label: "non-negative relative weight" for label in INTENT_ONTOLOGY},
+        "destination": {
+            label: "non-negative relative weight" for label in DESTINATION_ONTOLOGY
+        },
+        "next_region": {label: "non-negative relative weight" for label in support},
         "confidence": "number in [0,1]",
     }
     observed = {
@@ -615,14 +620,58 @@ def build_teacher_prompt(query: Mapping[str, Any]) -> str:
     return (
         "You are an offline mobility-belief teacher. Infer uncertainty from observed history only.\n"
         "Do not invent labels or regions. Return exactly one JSON object, no markdown and no explanation.\n"
-        "Every distribution must contain exactly the shown keys, use finite non-negative numbers, and sum to 1.\n"
+        "Every distribution must contain exactly the shown keys and finite non-negative relative weights.\n"
+        "Weights do not need to sum to 1, but each distribution must have positive total mass. "
+        "The collector deterministically L1-normalizes them.\n"
         f"Prompt version: {PROMPT_VERSION}\n"
         f"Fixed output schema: {_canonical_json(schema)}\n"
         f"Observed causal input: {_canonical_json(observed)}\n"
     )
 
 
-def _strict_probability_map(value: Any, keys: Sequence[str], name: str) -> dict[str, float]:
+def _teacher_weight_schema(keys: Sequence[str]) -> dict[str, Any]:
+    labels = [str(key) for key in keys]
+    if not labels or len(labels) != len(set(labels)):
+        raise ValueError("teacher response support must be non-empty and unique")
+    return {
+        "type": "object",
+        "properties": {
+            key: {"type": "number", "minimum": 0.0} for key in labels
+        },
+        "required": labels,
+        "additionalProperties": False,
+    }
+
+
+def build_teacher_response_format(support: Sequence[str]) -> dict[str, Any]:
+    schema = {
+        "type": "object",
+        "properties": {
+            "activity": _teacher_weight_schema(ACTIVITY_ONTOLOGY),
+            "intent": _teacher_weight_schema(INTENT_ONTOLOGY),
+            "destination": _teacher_weight_schema(DESTINATION_ONTOLOGY),
+            "next_region": _teacher_weight_schema(support),
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        },
+        "required": ["activity", "intent", "destination", "next_region", "confidence"],
+        "additionalProperties": False,
+    }
+    schema_hash = _canonical_hash(schema)
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": f"beliefmove_teacher_v2_{schema_hash[:12]}",
+            "strict": True,
+            "schema": schema,
+        },
+    }
+
+
+def _normalizable_weight_map(
+    value: Any,
+    keys: Sequence[str],
+    name: str,
+) -> tuple[dict[str, float], float]:
     if not isinstance(value, dict) or set(value) != set(keys):
         raise ValueError(f"{name} must contain exactly the fixed support")
     result: dict[str, float] = {}
@@ -634,13 +683,23 @@ def _strict_probability_map(value: Any, keys: Sequence[str], name: str) -> dict[
         if not math.isfinite(number) or number < 0:
             raise ValueError(f"{name}.{key} must be finite and non-negative")
         result[key] = number
-    if not math.isclose(sum(result.values()), 1.0, rel_tol=0.0, abs_tol=1e-6):
-        raise ValueError(f"{name} must sum to one")
+    total = math.fsum(result.values())
+    if not math.isfinite(total) or total <= 0.0:
+        raise ValueError(f"{name} must have positive finite mass")
+    return {key: result[key] / total for key in keys}, total
+
+
+def _reject_duplicate_json_keys(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
     return result
 
 
 def parse_teacher_response(raw: str, support: Sequence[str]) -> dict[str, Any]:
-    payload = json.loads(raw)
+    payload = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
     expected = {"activity", "intent", "destination", "next_region", "confidence"}
     if not isinstance(payload, dict) or set(payload) != expected:
         raise ValueError("teacher JSON fields do not match the fixed schema")
@@ -650,12 +709,42 @@ def parse_teacher_response(raw: str, support: Sequence[str]) -> dict[str, Any]:
     confidence = float(confidence)
     if not math.isfinite(confidence) or not 0 <= confidence <= 1:
         raise ValueError("confidence must be in [0,1]")
+    activity, activity_sum = _normalizable_weight_map(
+        payload["activity"], ACTIVITY_ONTOLOGY, "activity"
+    )
+    intent, intent_sum = _normalizable_weight_map(
+        payload["intent"], INTENT_ONTOLOGY, "intent"
+    )
+    destination, destination_sum = _normalizable_weight_map(
+        payload["destination"], DESTINATION_ONTOLOGY, "destination"
+    )
+    next_region, next_region_sum = _normalizable_weight_map(
+        payload["next_region"], support, "next_region"
+    )
+    raw_sums = {
+        "activity": activity_sum,
+        "intent": intent_sum,
+        "destination": destination_sum,
+        "next_region": next_region_sum,
+    }
     return {
-        "activity": _strict_probability_map(payload["activity"], ACTIVITY_ONTOLOGY, "activity"),
-        "intent": _strict_probability_map(payload["intent"], INTENT_ONTOLOGY, "intent"),
-        "destination": _strict_probability_map(payload["destination"], DESTINATION_ONTOLOGY, "destination"),
-        "next_region": _strict_probability_map(payload["next_region"], support, "next_region"),
+        "activity": activity,
+        "intent": intent,
+        "destination": destination,
+        "next_region": next_region,
         "confidence": confidence,
+        "_normalization": {
+            "version": NORMALIZATION_VERSION,
+            "raw_sums": raw_sums,
+            "applied": any(
+                not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=1e-12)
+                for total in raw_sums.values()
+            ),
+            "canonical_probability_error": max(
+                abs(math.fsum(values.values()) - 1.0)
+                for values in (activity, intent, destination, next_region)
+            ),
+        },
     }
 
 
@@ -699,6 +788,28 @@ def _load_teacher_cache(cache_root: Path) -> tuple[dict[str, dict[str, Any]], di
     return attempts, beliefs
 
 
+def _teacher_interface_policy(cache_tag: str) -> dict[str, float]:
+    """Return the predeclared teacher-interface thresholds for one cache.
+
+    Collection completeness and semantic interface validity are deliberately
+    separate gates.  Smoke/repeat caches are small diagnostic samples and
+    therefore admit no fallback.  The larger pilot base retains the protocol's
+    predeclared 95% valid-output and 1% transport-error thresholds.
+    """
+
+    if cache_tag == "smoke" or cache_tag.startswith("pilot-repeat-"):
+        return {
+            "minimum_valid_output_rate": 1.0,
+            "maximum_fallback_rate": 0.0,
+            "maximum_transport_error_rate": 0.0,
+        }
+    return {
+        "minimum_valid_output_rate": 0.95,
+        "maximum_fallback_rate": 0.05,
+        "maximum_transport_error_rate": 0.01,
+    }
+
+
 def teacher_cache(
     args: argparse.Namespace,
     *,
@@ -706,9 +817,9 @@ def teacher_cache(
 ) -> dict[str, Any]:
     if args.train_limit < 0 or args.validation_limit < 0:
         raise ValueError("teacher-cache limits must be non-negative")
-    if args.cache_tag != "smoke" and not re.fullmatch(r"[0-9a-fA-F]{64}", str(args.model_digest)):
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", str(args.model_digest)):
         raise ValueError(
-            "non-smoke teacher cache requires a 64-hex SHA-256 --model-digest; obtain it from "
+            "teacher cache requires a 64-hex SHA-256 --model-digest; obtain it from "
             "the Ollama /api/tags response"
         )
     output_root = Path(args.output_root)
@@ -771,6 +882,11 @@ def teacher_cache(
     digest_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model_digest).strip("-")
     teacher_contract = {
         "prompt_version": PROMPT_VERSION,
+        "response_schema_version": RESPONSE_SCHEMA_VERSION,
+        "normalization_version": NORMALIZATION_VERSION,
+        "response_format": "json_schema.strict",
+        "temperature": 0.0,
+        "sdk_retries": 0,
         "schema_hash": SCHEMA_HASH,
         "activity": ACTIVITY_ONTOLOGY,
         "intent": INTENT_ONTOLOGY,
@@ -822,9 +938,29 @@ def teacher_cache(
         raise RuntimeError(f"teacher cache already has an active collector: {cache_root}") from exc
     _write_json_immutable(cache_root / "selection_manifest.json", selection_manifest)
 
+    selected_ids = {
+        str(row["query_id"])
+        for rows in selected.values()
+        for row in rows
+    }
+    if len(selected_ids) != sum(len(rows) for rows in selected.values()):
+        fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
+        collector_lock.close()
+        raise ValueError("teacher selection contains duplicate query IDs")
     attempts, beliefs = _load_teacher_cache(cache_root)
+    unexpected_attempts = sorted(set(attempts) - selected_ids)
+    unexpected_beliefs = sorted(set(beliefs) - selected_ids)
+    if unexpected_attempts or unexpected_beliefs:
+        fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
+        collector_lock.close()
+        raise RuntimeError(
+            "teacher cache journals contain query IDs outside the immutable selection; "
+            f"attempts={unexpected_attempts[:5]}, beliefs={unexpected_beliefs[:5]}"
+        )
     dangling = sorted(set(attempts) - set(beliefs))
     if dangling:
+        fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
+        collector_lock.close()
         raise RuntimeError(
             "strict one-request journal has attempts without beliefs; no automatic retry is allowed: "
             + ", ".join(dangling[:5])
@@ -837,6 +973,7 @@ def teacher_cache(
         for query in selected[split]:
             query_id = str(query["query_id"])
             prompt = build_teacher_prompt(query)
+            response_format = build_teacher_response_format(query["candidate_regions"])
             source_hash = _canonical_hash(query)
             prompt_hash = hash_text(prompt)
             expected = {
@@ -844,6 +981,7 @@ def teacher_cache(
                 "split": split,
                 "source_hash": source_hash,
                 "prompt_hash": prompt_hash,
+                "response_format_hash": _canonical_hash(response_format),
                 "model_hash": hash_text(model_identity),
                 "dataset_hash": prepare_manifest["dataset_hash"],
                 "ontology_hash": prepare_manifest["ontology_hash"],
@@ -851,17 +989,36 @@ def teacher_cache(
             }
             if query_id in beliefs:
                 existing = beliefs[query_id]
-                for key in (
-                    "split",
-                    "source_hash",
-                    "prompt_hash",
-                    "model_hash",
-                    "dataset_hash",
-                    "ontology_hash",
-                ):
-                    if existing.get(key) != expected[key]:
-                        raise ValueError(f"immutable teacher belief conflict for query={query_id} field={key}")
-                StructuredBelief.from_dict(existing["belief"])
+                existing_attempt = attempts.get(query_id)
+                try:
+                    if existing_attempt is None:
+                        raise RuntimeError(
+                            f"query={query_id} has a belief without a matching physical-request attempt"
+                        )
+                    for key in (
+                        "query_id",
+                        "split",
+                        "source_hash",
+                        "prompt_hash",
+                        "response_format_hash",
+                        "model_hash",
+                        "dataset_hash",
+                        "ontology_hash",
+                        "physical_request",
+                    ):
+                        if existing_attempt.get(key) != expected[key]:
+                            raise ValueError(
+                                f"immutable teacher attempt conflict for query={query_id} field={key}"
+                            )
+                        if existing.get(key) != expected[key]:
+                            raise ValueError(
+                                f"immutable teacher belief conflict for query={query_id} field={key}"
+                            )
+                    StructuredBelief.from_dict(existing["belief"])
+                except Exception:
+                    fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
+                    collector_lock.close()
+                    raise
                 continue
             if query_id in attempts:
                 raise RuntimeError(f"query={query_id} was attempted previously; refusing a second request")
@@ -876,13 +1033,22 @@ def teacher_cache(
                 reset = getattr(llm, "reset_call_stats", None)
                 if callable(reset):
                     reset()
-                raw = str(llm.get_response_once(prompt))
+                raw = str(
+                    llm.get_response_once(prompt, response_format=response_format)
+                )
                 usage = _usage_from_wrapper(llm, started, prompt, raw)
                 parsed = parse_teacher_response(raw, query["candidate_regions"])
+                normalization = parsed.pop("_normalization")
                 raw_valid, fallback_reason, transport_error = True, "", ""
             except Exception as exc:  # one request means invalid/error output must fall back, never retry
                 usage = _usage_from_wrapper(llm, started, prompt, raw)
                 parsed = _fallback_payload(query["candidate_regions"])
+                normalization = {
+                    "version": NORMALIZATION_VERSION,
+                    "raw_sums": {},
+                    "applied": False,
+                    "canonical_probability_error": 0.0,
+                }
                 raw_valid = False
                 transport_error = "" if isinstance(exc, (ValueError, json.JSONDecodeError)) else f"{type(exc).__name__}: {exc}"
                 fallback_reason = f"{type(exc).__name__}: {exc}"
@@ -903,9 +1069,11 @@ def teacher_cache(
                 "raw_response": raw,
                 "raw_response_hash": hash_text(raw),
                 "raw_valid": raw_valid,
+                "usable_output": raw_valid,
                 "fallback": not raw_valid,
                 "fallback_reason": fallback_reason,
                 "transport_error": transport_error,
+                "normalization": normalization,
                 **usage,
                 "belief": belief.to_dict(),
             }
@@ -914,27 +1082,57 @@ def teacher_cache(
             new_requests += 1
             del started, raw
 
-    selected_ids = {str(row["query_id"]) for rows in selected.values() for row in rows}
     selected_records = [beliefs[query_id] for query_id in selected_ids]
+    completed_queries = len(selected_records)
+    valid_outputs = sum(
+        bool(row.get("usable_output", row.get("raw_valid")))
+        for row in selected_records
+    )
+    fallbacks = sum(bool(row.get("fallback")) for row in selected_records)
+    transport_errors = sum(bool(row.get("transport_error")) for row in selected_records)
+    prompt_target_leakage = sum(
+        bool(FORBIDDEN_TARGET_KEYS & _nested_keys(query))
+        for rows in selected.values()
+        for query in rows
+    )
+    valid_output_rate = valid_outputs / completed_queries if completed_queries else 0.0
+    fallback_rate = fallbacks / completed_queries if completed_queries else 0.0
+    transport_error_rate = transport_errors / completed_queries if completed_queries else 0.0
+    collection_ready = (
+        bool(selected_ids)
+        and completed_queries == len(selected_ids)
+        and set(attempts) == selected_ids
+        and set(beliefs) == selected_ids
+    )
+    interface_policy = _teacher_interface_policy(args.cache_tag)
+    interface_ready = (
+        collection_ready
+        and valid_output_rate >= interface_policy["minimum_valid_output_rate"]
+        and fallback_rate <= interface_policy["maximum_fallback_rate"]
+        and transport_error_rate <= interface_policy["maximum_transport_error_rate"]
+        and prompt_target_leakage == 0
+    )
     manifest = {
         **selection_manifest,
         "selected_queries": len(selected_ids),
-        "completed_queries": len(selected_records),
+        "completed_queries": completed_queries,
         "selected_by_split": {split: len(rows) for split, rows in selected.items()},
         "completed_by_split": {
             split: sum(record["split"] == split for record in selected_records)
             for split in ("train", "validation")
         },
         "physical_requests": sum(int(row["physical_request"]) for row in selected_records),
-        "raw_valid": sum(bool(row["raw_valid"]) for row in selected_records),
-        "fallbacks": sum(bool(row["fallback"]) for row in selected_records),
-        "transport_errors": sum(bool(row["transport_error"]) for row in selected_records),
-        "prompt_target_leakage": sum(
-            bool(FORBIDDEN_TARGET_KEYS & _nested_keys(query))
-            for rows in selected.values()
-            for query in rows
-        ),
-        "gate": "ready" if selected_ids and len(selected_records) == len(selected_ids) else "incomplete",
+        "raw_valid": valid_outputs,
+        "fallbacks": fallbacks,
+        "transport_errors": transport_errors,
+        "valid_output_rate": valid_output_rate,
+        "fallback_rate": fallback_rate,
+        "transport_error_rate": transport_error_rate,
+        "prompt_target_leakage": prompt_target_leakage,
+        "interface_policy": interface_policy,
+        "collection_gate": "ready" if collection_ready else "incomplete",
+        "interface_gate": "ready" if interface_ready else "incomplete",
+        "gate": "ready" if collection_ready and interface_ready else "incomplete",
     }
     _write_json_immutable(cache_root / "manifest.json", manifest)
     payload = {
@@ -942,6 +1140,11 @@ def teacher_cache(
         "dataset": args.dataset,
         "unit": args.unit,
         "gate": manifest["gate"],
+        "collection_gate": manifest["collection_gate"],
+        "interface_gate": manifest["interface_gate"],
+        "valid_output_rate": valid_output_rate,
+        "fallback_rate": fallback_rate,
+        "transport_error_rate": transport_error_rate,
         "selected": len(selected_ids),
         "completed": len(selected_records),
         "new_requests": new_requests,
@@ -950,6 +1153,8 @@ def teacher_cache(
     fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
     collector_lock.close()
     print(json.dumps(payload, ensure_ascii=False))
+    if getattr(args, "require_gate", False) and manifest["gate"] != "ready":
+        raise SystemExit(3)
     return payload
 
 
@@ -964,6 +1169,11 @@ def _teacher_cache_status(cache_root: Path) -> dict[str, Any]:
         "dangling_attempts": len(set(attempts) - set(beliefs)),
         "raw_valid": sum(bool(row.get("raw_valid")) for row in beliefs.values()),
         "fallbacks": sum(bool(row.get("fallback")) for row in beliefs.values()),
+        "valid_output_rate": manifest.get("valid_output_rate"),
+        "fallback_rate": manifest.get("fallback_rate"),
+        "transport_error_rate": manifest.get("transport_error_rate"),
+        "collection_gate": manifest.get("collection_gate", "incomplete"),
+        "interface_gate": manifest.get("interface_gate", "incomplete"),
         "gate": manifest.get("gate", "incomplete"),
     }
 
@@ -1007,18 +1217,374 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
     return payload
 
 
+def _smoke_cache_roots(
+    results_root: Path,
+    *,
+    model: str = "",
+    model_digest: str = "",
+) -> dict[tuple[str, str], list[Path]]:
+    """Index immutable smoke caches for the three predeclared pilot units."""
+
+    indexed: dict[tuple[str, str], list[Path]] = defaultdict(list)
+    for selection_path in sorted(results_root.rglob("selection_manifest.json")):
+        try:
+            selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        key = (str(selection.get("dataset", "")), str(selection.get("unit", "")))
+        if (
+            key not in PILOT_UNITS
+            or selection.get("cache_tag") != "smoke"
+            or (model and selection.get("model") != model)
+            or (model_digest and selection.get("model_digest") != model_digest)
+        ):
+            continue
+        # Count every immutable selection, including an interrupted cache that
+        # never reached its derived manifest.  Otherwise one complete cache
+        # plus one abandoned duplicate could be mistaken for an unambiguous
+        # smoke run.
+        indexed[key].append(selection_path.parent)
+    return indexed
+
+
+def _audit_teacher_journals(
+    cache_root: Path,
+    selection: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Recompute a teacher-interface decision from immutable raw journals.
+
+    Derived manifest counters are intentionally ignored.  The selection is
+    the sole ID/split contract, while attempts and beliefs must each contain
+    that exact set once.  Content and response-format provenance is checked on
+    both journal rows before any response is counted as usable.
+    """
+
+    query_ids = selection.get("query_ids")
+    expected_by_id: dict[str, str] = {}
+    selection_ids_valid = (
+        isinstance(query_ids, Mapping)
+        and set(query_ids) == {"train", "validation"}
+    )
+    if selection_ids_valid:
+        for split in ("train", "validation"):
+            rows = query_ids.get(split)
+            if not isinstance(rows, list):
+                selection_ids_valid = False
+                continue
+            for raw_query_id in rows:
+                query_id = str(raw_query_id)
+                if not query_id or query_id in expected_by_id:
+                    selection_ids_valid = False
+                else:
+                    expected_by_id[query_id] = split
+    selected_counts = selection.get("selected_by_split")
+    selection_ids_valid = selection_ids_valid and isinstance(selected_counts, Mapping)
+    if selection_ids_valid:
+        selection_ids_valid = all(
+            selected_counts.get(split) == sum(
+                expected_split == split for expected_split in expected_by_id.values()
+            )
+            for split in ("train", "validation")
+        )
+
+    journal_error = ""
+    try:
+        attempts, beliefs = _load_teacher_cache(cache_root)
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        attempts, beliefs = {}, {}
+        journal_error = f"{type(exc).__name__}: {exc}"
+
+    expected_ids = set(expected_by_id)
+    attempt_ids = set(attempts)
+    belief_ids = set(beliefs)
+    missing_attempt_ids = sorted(expected_ids - attempt_ids)
+    unexpected_attempt_ids = sorted(attempt_ids - expected_ids)
+    missing_belief_ids = sorted(expected_ids - belief_ids)
+    unexpected_belief_ids = sorted(belief_ids - expected_ids)
+    dangling_attempt_ids = sorted(attempt_ids - belief_ids)
+    orphan_belief_ids = sorted(belief_ids - attempt_ids)
+
+    schema_valid = True
+    ontology_valid = True
+    content_provenance_valid = True
+    response_format_provenance_valid = True
+    normalization_valid = True
+    record_flags_valid = True
+    prompt_target_leakage = 0
+    usable_outputs = 0
+    fallbacks = 0
+    transport_errors = 0
+    v2_cache = selection.get("version") == TEACHER_VERSION
+    hash_fields = (
+        "source_hash",
+        "prompt_hash",
+        "response_format_hash",
+        "model_hash",
+        "dataset_hash",
+        "ontology_hash",
+    )
+    for query_id in sorted(expected_ids & attempt_ids & belief_ids):
+        attempt = attempts[query_id]
+        record = beliefs[query_id]
+        expected_split = expected_by_id[query_id]
+        if (
+            attempt.get("query_id") != query_id
+            or record.get("query_id") != query_id
+            or attempt.get("split") != expected_split
+            or record.get("split") != expected_split
+            or attempt.get("physical_request") != 1
+            or record.get("physical_request") != 1
+        ):
+            content_provenance_valid = False
+        for field in hash_fields:
+            attempt_value = attempt.get(field)
+            record_value = record.get(field)
+            if (
+                not isinstance(attempt_value, str)
+                or re.fullmatch(r"[0-9a-f]{64}", attempt_value) is None
+                or record_value != attempt_value
+            ):
+                content_provenance_valid = False
+                if field == "response_format_hash":
+                    response_format_provenance_valid = False
+        if (
+            record.get("dataset_hash") != selection.get("dataset_hash")
+            or record.get("ontology_hash") != selection.get("ontology_hash")
+        ):
+            content_provenance_valid = False
+        prompt = record.get("prompt")
+        raw_response = record.get("raw_response")
+        if (
+            not isinstance(prompt, str)
+            or hash_text(prompt) != record.get("prompt_hash")
+            or not isinstance(raw_response, str)
+            or hash_text(raw_response) != record.get("raw_response_hash")
+        ):
+            content_provenance_valid = False
+        if isinstance(prompt, str) and any(
+            f'"{key}"' in prompt for key in FORBIDDEN_TARGET_KEYS
+        ):
+            prompt_target_leakage += 1
+        try:
+            belief = StructuredBelief.from_dict(record["belief"])
+            if (
+                belief.query_hash != record.get("source_hash")
+                or belief.prompt_hash != record.get("prompt_hash")
+                or belief.model_hash != record.get("model_hash")
+            ):
+                content_provenance_valid = False
+            ontology_valid = ontology_valid and (
+                set(belief.activity) == set(ACTIVITY_ONTOLOGY)
+                and set(belief.intent) == set(INTENT_ONTOLOGY)
+                and set(belief.destination) == set(DESTINATION_ONTOLOGY)
+            )
+        except (KeyError, TypeError, ValueError):
+            schema_valid = False
+
+        if v2_cache:
+            normalization = record.get("normalization")
+            error = normalization.get("canonical_probability_error") if isinstance(normalization, Mapping) else None
+            normalization_valid = normalization_valid and (
+                isinstance(normalization, Mapping)
+                and normalization.get("version") == NORMALIZATION_VERSION
+                and isinstance(error, (int, float))
+                and not isinstance(error, bool)
+                and math.isfinite(float(error))
+                and 0.0 <= float(error) <= 1e-6
+            )
+
+        raw_valid = record.get("raw_valid")
+        usable = record.get("usable_output", raw_valid)
+        fallback = record.get("fallback")
+        transport_error = record.get("transport_error")
+        if (
+            not isinstance(raw_valid, bool)
+            or not isinstance(usable, bool)
+            or not isinstance(fallback, bool)
+            or not isinstance(transport_error, str)
+            or ("usable_output" in record and usable != raw_valid)
+            or fallback == usable
+            or (usable and bool(transport_error))
+        ):
+            record_flags_valid = False
+        usable_outputs += int(usable is True)
+        fallbacks += int(fallback is True)
+        transport_errors += int(bool(transport_error))
+
+    completed = len(beliefs)
+    checks = {
+        "manifest_present": (cache_root / "manifest.json").is_file(),
+        "teacher_contract_version": v2_cache,
+        "selection_ids_valid": bool(expected_ids) and selection_ids_valid,
+        "attempt_ids_exact": attempt_ids == expected_ids,
+        "belief_ids_exact": belief_ids == expected_ids,
+        "no_dangling_ids": attempt_ids == belief_ids,
+        "journals_parse": not journal_error,
+        "belief_schema_valid": schema_valid and completed > 0,
+        "fixed_ontology_valid": ontology_valid and completed > 0,
+        "content_provenance_valid": content_provenance_valid and completed > 0,
+        "response_format_provenance_valid": response_format_provenance_valid and completed > 0,
+        "normalization_valid": normalization_valid and completed > 0,
+        "record_flags_valid": record_flags_valid and completed > 0,
+        "all_outputs_valid": completed > 0 and usable_outputs == completed,
+        "zero_fallbacks": fallbacks == 0,
+        "zero_transport_errors": transport_errors == 0,
+        "no_prompt_target_leakage": (
+            prompt_target_leakage == 0 and selection.get("test_queries_read") is False
+        ),
+    }
+    return {
+        "selected": len(expected_ids),
+        "completed": completed,
+        "raw_valid": usable_outputs,
+        "fallbacks": fallbacks,
+        "transport_errors": transport_errors,
+        "prompt_target_leakage": prompt_target_leakage,
+        "journal_error": journal_error or None,
+        "missing_attempt_ids": missing_attempt_ids,
+        "unexpected_attempt_ids": unexpected_attempt_ids,
+        "missing_belief_ids": missing_belief_ids,
+        "unexpected_belief_ids": unexpected_belief_ids,
+        "dangling_attempt_ids": dangling_attempt_ids,
+        "orphan_belief_ids": orphan_belief_ids,
+        "checks": checks,
+    }
+
+
+def build_smoke_report(
+    results_root: Path,
+    *,
+    model: str = "",
+    model_digest: str = "",
+    write: bool = True,
+) -> dict[str, Any]:
+    """Build the fail-fast teacher-interface gate before pilot collection.
+
+    A unit is ready only when one unambiguous smoke cache has complete
+    train/validation journals and every response is valid without fallback,
+    transport error, or target leakage.  The report reads no test artifacts.
+    """
+
+    indexed = _smoke_cache_roots(
+        results_root,
+        model=model,
+        model_digest=model_digest,
+    )
+    units: list[dict[str, Any]] = []
+    for dataset, unit in sorted(PILOT_UNITS):
+        candidates = indexed.get((dataset, unit), [])
+        if len(candidates) != 1:
+            units.append(
+                {
+                    "dataset": dataset,
+                    "unit": unit,
+                    "cache": None,
+                    "candidate_caches": [str(path) for path in candidates],
+                    "checks": {"unique_cache": False},
+                    "gate": "incomplete",
+                }
+            )
+            continue
+        cache_root = candidates[0]
+        selection = json.loads(
+            (cache_root / "selection_manifest.json").read_text(encoding="utf-8")
+        )
+        requested = selection.get("requested_by_split", {})
+        available = selection.get("available_by_split", {})
+        selected = selection.get("selected_by_split", {})
+        budget_valid = requested == SMOKE_REQUESTED and all(
+            isinstance(available.get(split), int)
+            and int(available[split]) >= 0
+            and int(selected.get(split, -1))
+            == min(SMOKE_REQUESTED[split], int(available[split]))
+            for split in ("train", "validation")
+        )
+        audit = _audit_teacher_journals(cache_root, selection)
+        completed = int(audit["completed"])
+        valid = int(audit["raw_valid"])
+        checks = {
+            "unique_cache": True,
+            "smoke_budget_contract": budget_valid,
+            **audit["checks"],
+        }
+        units.append(
+            {
+                "dataset": dataset,
+                "unit": unit,
+                "cache": str(cache_root),
+                "selected": int(audit["selected"]),
+                "completed": completed,
+                "valid_output_rate": valid / completed if completed else None,
+                "fallback_rate": (
+                    int(audit["fallbacks"]) / completed if completed else None
+                ),
+                "transport_error_rate": (
+                    int(audit["transport_errors"]) / completed if completed else None
+                ),
+                "journal_diagnostics": {
+                    key: audit[key]
+                    for key in (
+                        "journal_error",
+                        "missing_attempt_ids",
+                        "unexpected_attempt_ids",
+                        "missing_belief_ids",
+                        "unexpected_belief_ids",
+                        "dangling_attempt_ids",
+                        "orphan_belief_ids",
+                    )
+                },
+                "checks": checks,
+                "gate": "ready" if all(checks.values()) else "incomplete",
+            }
+        )
+    all_units_present = all(len(indexed.get(key, [])) == 1 for key in PILOT_UNITS)
+    report = {
+        "version": "beliefmove.smoke-report.v2",
+        "results_root": str(results_root),
+        "model": model or None,
+        "model_digest": model_digest or None,
+        "required_units": [f"{dataset}:{unit}" for dataset, unit in sorted(PILOT_UNITS)],
+        "all_units_present": all_units_present,
+        "units": units,
+        "test_artifacts_read": False,
+        "gate": (
+            "ready"
+            if all_units_present and len(units) == len(PILOT_UNITS)
+            and all(item["gate"] == "ready" for item in units)
+            else "incomplete"
+        ),
+    }
+    report["report_hash"] = _canonical_hash(report)
+    if write:
+        output = results_root / "aggregated" / "smoke_report.json"
+        _atomic_text(output, json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+    return report
+
+
+def smoke_report(args: argparse.Namespace) -> dict[str, Any]:
+    report = build_smoke_report(
+        Path(args.results_root),
+        model=str(getattr(args, "model", "") or ""),
+        model_digest=str(getattr(args, "model_digest", "") or ""),
+        write=True,
+    )
+    print(json.dumps(report, ensure_ascii=False))
+    if getattr(args, "require_ready", False) and report["gate"] != "ready":
+        raise SystemExit(3)
+    return report
+
+
 def _pilot_cache_roots(results_root: Path) -> list[Path]:
     roots: list[Path] = []
-    for path in sorted(results_root.rglob("manifest.json")):
-        selection_path = path.parent / "selection_manifest.json"
-        if not selection_path.is_file():
-            continue
+    for selection_path in sorted(results_root.rglob("selection_manifest.json")):
         try:
             selection = json.loads(selection_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         if selection.get("cache_tag") == "pilot":
-            roots.append(path.parent)
+            # Include interrupted bases without a derived manifest so they
+            # still count toward the uniqueness gate.
+            roots.append(selection_path.parent)
     return roots
 
 
@@ -1109,12 +1675,52 @@ def _pilot_evaluation(
 
 def build_pilot_report(results_root: Path, *, write: bool = True) -> dict[str, Any]:
     units: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    indexed: dict[tuple[str, str], list[Path]] = defaultdict(list)
     for cache_root in _pilot_cache_roots(results_root):
+        selection_path = cache_root / "selection_manifest.json"
+        try:
+            selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        key = (str(selection.get("dataset", "")), str(selection.get("unit", "")))
+        if key in PILOT_UNITS:
+            indexed[key].append(cache_root)
+
+    for dataset, unit in sorted(PILOT_UNITS):
+        candidates = indexed.get((dataset, unit), [])
+        if len(candidates) != 1:
+            units.append(
+                {
+                    "dataset": dataset,
+                    "unit": unit,
+                    "cache": None,
+                    "candidate_caches": [str(path) for path in candidates],
+                    "pilot_evaluation_present": False,
+                    "checks": {"unique_base_cache": False},
+                    "gate": "incomplete",
+                }
+            )
+            continue
+        cache_root = candidates[0]
+        manifest_path = cache_root / "manifest.json"
+        if not manifest_path.is_file():
+            units.append(
+                {
+                    "dataset": dataset,
+                    "unit": unit,
+                    "cache": str(cache_root),
+                    "candidate_caches": [str(cache_root)],
+                    "pilot_evaluation_present": False,
+                    "checks": {
+                        "unique_base_cache": True,
+                        "manifest_present": False,
+                    },
+                    "gate": "incomplete",
+                }
+            )
+            continue
         unit_root = _unit_root_for_cache(cache_root)
-        manifest = json.loads((cache_root / "manifest.json").read_text(encoding="utf-8"))
-        dataset, unit = str(manifest["dataset"]), str(manifest["unit"])
-        seen.add((dataset, unit))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         selection_path = cache_root / "selection_manifest.json"
         attempts_path = cache_root / "attempts.jsonl"
         beliefs_path = cache_root / "beliefs.jsonl"
@@ -1166,6 +1772,7 @@ def build_pilot_report(results_root: Path, *, write: bool = True) -> dict[str, A
             and all(selection.get("query_ids", {}).get(split) for split in ("train", "validation"))
         )
         checks = {
+            "unique_base_cache": True,
             "cache_complete": raw_cache_complete,
             "belief_schema_valid": schema_valid and completed > 0,
             "fixed_ontology_valid": ontology_valid and completed > 0,
@@ -1205,15 +1812,21 @@ def build_pilot_report(results_root: Path, *, write: bool = True) -> dict[str, A
                 "gate": "ready" if all(checks.values()) else "incomplete",
             }
         )
-    all_units_present = PILOT_UNITS <= seen
+    all_units_present = all(len(indexed.get(key, [])) == 1 for key in PILOT_UNITS)
     report = {
-        "version": "beliefmove.pilot-report.v1",
+        "version": "beliefmove.pilot-report.v2",
         "results_root": str(results_root),
         "required_units": [f"{dataset}:{unit}" for dataset, unit in sorted(PILOT_UNITS)],
         "all_units_present": all_units_present,
         "units": units,
         "test_artifacts_read": False,
-        "gate": "ready" if all_units_present and units and all(item["gate"] == "ready" for item in units) else "incomplete",
+        "gate": (
+            "ready"
+            if all_units_present
+            and len(units) == len(PILOT_UNITS)
+            and all(item["gate"] == "ready" for item in units)
+            else "incomplete"
+        ),
     }
     report["report_hash"] = _canonical_hash(report)
     if write:
@@ -1293,7 +1906,7 @@ def lock(args: argparse.Namespace) -> dict[str, Any]:
         ]
         raise RuntimeError(f"pilot gate is not ready; protocol remains unlocked; failed={failed}")
     payload = {
-        "version": "beliefmove.protocol-lock.v1",
+        "version": "beliefmove.protocol-lock.v2",
         "protocol_hash": _canonical_hash(protocol),
         "pilot_report_hash": report["report_hash"],
         "pilot_gate": "ready",
@@ -1339,6 +1952,7 @@ def build_parser() -> argparse.ArgumentParser:
     teacher_parser.add_argument("--validation-limit", type=int, required=True)
     teacher_parser.add_argument("--seed", type=int, default=42)
     teacher_parser.add_argument("--query-root")
+    teacher_parser.add_argument("--require-gate", action="store_true")
     teacher_parser.set_defaults(handler=teacher_cache)
     pilot_parser = unit_parser("pilot-evaluate")
     pilot_parser.add_argument("--model", required=True)
@@ -1352,6 +1966,12 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser = subparsers.add_parser("pilot-report")
     report_parser.add_argument("--results-root", required=True)
     report_parser.set_defaults(handler=pilot_report)
+    smoke_report_parser = subparsers.add_parser("smoke-report")
+    smoke_report_parser.add_argument("--results-root", required=True)
+    smoke_report_parser.add_argument("--model", default="")
+    smoke_report_parser.add_argument("--model-digest", default="")
+    smoke_report_parser.add_argument("--require-ready", action="store_true")
+    smoke_report_parser.set_defaults(handler=smoke_report)
     lock_parser = subparsers.add_parser("lock")
     lock_parser.add_argument("--results-root", required=True)
     lock_parser.add_argument("--protocol", required=True)

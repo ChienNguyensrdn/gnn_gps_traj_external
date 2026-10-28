@@ -31,7 +31,8 @@ teacher_unit() {
     --data-base "$BM_DATA_BASE" --output-root "$BM_OUTPUT" \
     --model "$OLLAMA_MODEL" --cache-tag "$tag" \
     --model-digest "$OLLAMA_MODEL_DIGEST" \
-    --train-limit "$train_limit" --validation-limit "$val_limit")
+    --train-limit "$train_limit" --validation-limit "$val_limit" \
+    --require-gate)
   if [[ -n "$query_root" ]]; then command+=(--query-root "$query_root"); fi
   run_cli "${command[@]}"
 }
@@ -94,8 +95,21 @@ status_unit() {
 case "$ACTION" in
   audit) beliefmove_for_each_unit audit_unit ;;
   prepare) beliefmove_for_each_unit prepare_unit ;;
-  smoke) beliefmove_for_each_unit smoke_unit ;;
-  pilot) beliefmove_for_each_unit pilot_unit ;;
+  smoke)
+    beliefmove_for_each_unit smoke_unit
+    run_cli smoke-report --results-root "$BELIEFMOVE_ROOT" \
+      --model "$OLLAMA_MODEL" --model-digest "$OLLAMA_MODEL_DIGEST" \
+      --require-ready ;;
+  smoke-report)
+    run_cli smoke-report --results-root "$BELIEFMOVE_ROOT" \
+      --model "$OLLAMA_MODEL" --model-digest "$OLLAMA_MODEL_DIGEST" ;;
+  pilot)
+    # This is intentionally the first pilot action.  No pilot request may be
+    # sent unless all three representative units pass the strict smoke gate.
+    run_cli smoke-report --results-root "$BELIEFMOVE_ROOT" \
+      --model "$OLLAMA_MODEL" --model-digest "$OLLAMA_MODEL_DIGEST" \
+      --require-ready
+    beliefmove_for_each_unit pilot_unit ;;
   pilot-report) run_cli pilot-report --results-root "$BELIEFMOVE_ROOT" ;;
   lock) run_cli lock --results-root "$BELIEFMOVE_ROOT" --protocol phase3_beliefmove/protocol.json ;;
   quantitative-support-audit)
@@ -119,6 +133,6 @@ case "$ACTION" in
       --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" ;;
   report) run_cli report --results-root "$BELIEFMOVE_ROOT" ;;
   *)
-    echo "Usage: $0 <audit|prepare|smoke|pilot|pilot-report|lock|quantitative-support-audit|quantitative-support|teacher-offline|quantitative-teacher|train|test-bank|evaluate|controls|status|aggregate|report>" >&2
+    echo "Usage: $0 <audit|prepare|smoke|smoke-report|pilot|pilot-report|lock|quantitative-support-audit|quantitative-support|teacher-offline|quantitative-teacher|train|test-bank|evaluate|controls|status|aggregate|report>" >&2
     exit 2 ;;
 esac

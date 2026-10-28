@@ -5,7 +5,7 @@ Không dùng kết quả Phase 2 để thay cho các thành phần dưới đây
 
 | Yêu cầu trong tài liệu | Hiện thực/contract | Trạng thái |
 |---|---|---|
-| LLM Mobility Teacher sinh activity, intent, destination, next-region, confidence | `hybrid/beliefmove/schema.py`, prompt JSON cố định, cache một request/query | pilot ready |
+| LLM Mobility Teacher sinh activity, intent, destination, next-region, confidence | response contract v2: strict exact-support JSON Schema, một request/query, deterministic L1 normalization tại collector | pilot ready |
 | Teacher là soft supervision, không phải ground truth | confidence-weighted expected soft counts; fallback có weight 0 | pilot ready |
 | Bayesian knowledge distillation | `DataCPT`, `TeacherSoftCountCPT`, `BlendedCPT`; alpha chỉ chọn validation | primitive + pilot screening ready |
 | Lightweight BN với activity–intent–destination–region | factorization khóa trong `protocol.json` | trainer M1–M5 pending |
@@ -28,6 +28,11 @@ Không dùng kết quả Phase 2 để thay cho các thành phần dưới đây
   M2 phải giảm NLL nghiêm ngặt trên partition held-out rời nhau.
 - Ba repeat cache 50-query phải hoàn toàn valid trước khi tính JSD. Report/lock
   luôn tái tính từ raw cache; summary viết tay hoặc stale không thể mở khóa.
+- Smoke bắt buộc khóa full model digest, chạy đúng ba pilot unit và được xác
+  nhận lại bằng `smoke-report`; pilot fail-closed nếu smoke report chưa `ready`.
+- Cache v2 lưu riêng raw relative weights và canonical probabilities, cùng
+  response-schema/normalization versions và response-format hash. Cache v1
+  không được resume hoặc đổi tên để dùng trong namespace v2.
 - Test quantitative support bị chặn đến khi `protocol_lock.json` hợp lệ và hash
   của protocol hiện tại khớp lock.
 

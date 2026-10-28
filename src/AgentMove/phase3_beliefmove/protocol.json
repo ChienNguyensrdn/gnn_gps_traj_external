@@ -1,6 +1,7 @@
 {
   "protocol_name": "BeliefMove faithful structured-belief protocol",
-  "version": "v1",
+  "version": "v2",
+  "artifact_namespace": "results/beliefmove-faithful/v2",
   "primary_query_protocol": "all chronological prefixes; reset state at trajectory boundary",
   "secondary_query_protocol": "last prefix per trajectory",
   "estimand": "predict the next location from the observed prefix at a known prediction timestamp; the next POI, category and spatial region remain hidden",
@@ -102,13 +103,21 @@
     ]
   },
   "teacher": {
+    "cache_version": "beliefmove.teacher-cache.v2",
+    "prompt_version": "beliefmove.structured-teacher.v2",
     "role": "structured mobility-belief teacher, not ground truth",
     "fields": ["activity", "intent", "destination", "next_region", "confidence"],
     "temperature": 0.0,
     "strict_json": true,
+    "response_schema_version": "beliefmove.teacher-response-schema.v2",
+    "raw_response_contract": "exact-support non-negative relative weights with positive mass",
+    "normalization_version": "beliefmove.teacher-l1-weights.v1",
+    "canonicalization": "deterministic L1 normalization at the trusted collector boundary; canonical probability error at most 1e-6",
+    "response_format": "strict JSON Schema over the frozen support",
+    "model_digest": "required 64-hex SHA-256 from the serving Ollama instance for smoke, pilot, repeats, and official caches",
     "one_physical_request_per_uncached_query": true,
     "cache": "immutable and content addressed",
-    "required_hashes": ["dataset", "source", "ontology", "prompt", "model"]
+    "required_hashes": ["dataset", "source", "ontology", "prompt_contract", "response_format", "model"]
   },
   "cpt_blend_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
   "router_primary_call_rate_cap": 0.1,
@@ -199,7 +208,7 @@
     "full_system": "M5 improves M1 on all three dataset families, is within 0.01 absolute MRR of always-LLM, uses at most 10% of queries as LLM calls and at most 15% of always-LLM tokens/query, has p95 latency at most 25% of always-LLM, and degrades ECE by no more than 0.01"
   },
   "stop_rules": {
-    "smoke": "schema parse must be 100%, probability error below 1e-6, prompts contain no target fields, and cache resume/hash tests pass",
+    "smoke": "full model digest is required; smoke-report must find exactly one matching immutable cache for each pilot unit; schema parse must be 100%, canonical probability error at most 1e-6, prompts contain no target fields, and cache resume/hash tests pass",
     "pilot": "valid output at least 0.95, transport error at most 0.01, teacher beats empirical prior for activity and destination, alpha is selected on one deterministic validation partition and M2 strictly improves M1 NLL on the disjoint held-out validation partition in every pilot domain, and repeated valid-output median JSD is at most 0.10",
     "distillation": "do not claim or expand M2 if M2 does not beat M1",
     "routing": "do not run a large online-LLM test if validation shows no positive realized LLM gain or router AUC is at most 0.5",

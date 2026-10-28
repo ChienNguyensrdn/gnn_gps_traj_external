@@ -16,9 +16,12 @@ from hybrid.beliefmove.experiment import (
     _prefix_queries,
     _read_split,
     build_pilot_report,
+    build_smoke_report,
     build_teacher_prompt,
+    build_teacher_response_format,
     lock,
     main,
+    parse_teacher_response,
     prepare,
     status,
     teacher_cache,
@@ -43,15 +46,17 @@ class FakeLLM:
     def __init__(self, *, malformed: bool = False) -> None:
         self.malformed = malformed
         self.prompts: list[str] = []
+        self.response_formats: list[dict | None] = []
         self.calls = 0
         self.last_call_stats = {}
 
     def reset_call_stats(self) -> None:
         self.last_call_stats = {}
 
-    def get_response_once(self, prompt: str) -> str:
+    def get_response_once(self, prompt: str, *, response_format=None) -> str:
         self.calls += 1
         self.prompts.append(prompt)
+        self.response_formats.append(response_format)
         self.last_call_stats = {
             "latency_seconds": 0.01,
             "input_tokens": 25,
@@ -256,6 +261,7 @@ class BeliefMoveExperimentTests(unittest.TestCase):
             self.assertNotIn("target_time", prompt)
             self.assertNotIn("target_poi_id", prompt)
             self.assertNotIn("target_region", prompt)
+        self.assertTrue(all(item and item["type"] == "json_schema" for item in fake.response_formats))
         cache = Path(result["cache"])
         beliefs = [json.loads(line) for line in (cache / "beliefs.jsonl").read_text().splitlines()]
         self.assertEqual({row["split"] for row in beliefs}, {"train", "validation"})
@@ -278,6 +284,208 @@ class BeliefMoveExperimentTests(unittest.TestCase):
         self.assertTrue(all(row["physical_request"] == 1 for row in beliefs))
         manifest = json.loads((cache / "manifest.json").read_text())
         self.assertEqual(manifest["fallbacks"], 2)
+        self.assertEqual(manifest["collection_gate"], "ready")
+        self.assertEqual(manifest["interface_gate"], "incomplete")
+        self.assertEqual(manifest["gate"], "incomplete")
+
+    def test_teacher_cache_resume_revalidates_attempt_response_format_hash(self) -> None:
+        prepare(self._unit_args())
+        fake = FakeLLM()
+        result = teacher_cache(self._teacher_args(), llm_factory=lambda *_: fake)
+        attempts_path = Path(result["cache"]) / "attempts.jsonl"
+        attempts = [
+            json.loads(line) for line in attempts_path.read_text(encoding="utf-8").splitlines()
+        ]
+        attempts[0]["response_format_hash"] = "0" * 64
+        attempts_path.write_text(
+            "".join(json.dumps(row) + "\n" for row in attempts), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(
+            ValueError, "immutable teacher attempt conflict.*response_format_hash"
+        ):
+            teacher_cache(self._teacher_args(), llm_factory=lambda *_: fake)
+        self.assertEqual(fake.calls, 2)
+
+    def test_teacher_cache_require_gate_fails_after_writing_invalid_diagnostics(self) -> None:
+        prepare(self._unit_args())
+        args = self._teacher_args("smoke")
+        args.require_gate = True
+        with self.assertRaisesRegex(SystemExit, "3"):
+            teacher_cache(args, llm_factory=lambda *_: FakeLLM(malformed=True))
+        manifests = list((self.output / "teacher").rglob("manifest.json"))
+        self.assertEqual(len(manifests), 1)
+        manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+        self.assertEqual(manifest["collection_gate"], "ready")
+        self.assertEqual(manifest["interface_gate"], "incomplete")
+        self.assertEqual(manifest["raw_valid"], 0)
+
+    def test_smoke_report_requires_all_three_unambiguous_strict_caches(self) -> None:
+        results_root = self.root / "smoke-results"
+        digest = "a" * 64
+        for dataset, unit in (
+            ("tist2015", "Tokyo"),
+            ("www2019", "Shanghai"),
+            ("yjmob100k", "YJMob"),
+        ):
+            cache = results_root / dataset / unit / "teacher" / "fake" / "cache"
+            cache.mkdir(parents=True)
+            dataset_hash = hashlib.sha256(f"dataset:{dataset}".encode()).hexdigest()
+            ontology_digest = hashlib.sha256(b"ontology").hexdigest()
+            query_ids = {
+                split: [f"{split}:{dataset}:{index}" for index in range(20)]
+                for split in ("train", "validation")
+            }
+            selection = {
+                "version": "beliefmove.teacher-cache.v2",
+                "dataset": dataset,
+                "unit": unit,
+                "cache_tag": "smoke",
+                "model": "fake:1b",
+                "model_digest": digest,
+                "dataset_hash": dataset_hash,
+                "ontology_hash": ontology_digest,
+                "requested_by_split": {"train": 20, "validation": 20},
+                "available_by_split": {"train": 30, "validation": 25},
+                "selected_by_split": {"train": 20, "validation": 20},
+                "query_ids": query_ids,
+                "test_queries_read": False,
+            }
+            manifest = {
+                **selection,
+                # Deliberately bogus derived counters: the smoke report must
+                # recompute its gate from the journals below.
+                "selected_queries": 0,
+                "completed_queries": 0,
+                "raw_valid": 0,
+                "fallbacks": 40,
+                "transport_errors": 40,
+                "gate": "incomplete",
+            }
+            (cache / "selection_manifest.json").write_text(json.dumps(selection), encoding="utf-8")
+            (cache / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            attempts, beliefs = [], []
+            model_identity = f"Fake:fake:1b@{digest}"
+            for split, ids in query_ids.items():
+                for query_id in ids:
+                    source = f"source:{query_id}"
+                    prompt = f"prompt:{query_id}"
+                    raw_response = "{}"
+                    provenance = {
+                        "query_id": query_id,
+                        "split": split,
+                        "source_hash": hashlib.sha256(source.encode()).hexdigest(),
+                        "prompt_hash": hashlib.sha256(prompt.encode()).hexdigest(),
+                        "response_format_hash": hashlib.sha256(
+                            f"format:{query_id}".encode()
+                        ).hexdigest(),
+                        "model_hash": hashlib.sha256(model_identity.encode()).hexdigest(),
+                        "dataset_hash": dataset_hash,
+                        "ontology_hash": ontology_digest,
+                        "physical_request": 1,
+                    }
+                    belief = StructuredBelief.create(
+                        query=source,
+                        prompt=prompt,
+                        model_identity=model_identity,
+                        activity={key: 1.0 for key in ACTIVITY_ONTOLOGY},
+                        intent={key: 1.0 for key in INTENT_ONTOLOGY},
+                        destination={key: 1.0 for key in DESTINATION_ONTOLOGY},
+                        next_region={"region": 1.0},
+                        confidence=0.5,
+                    ).to_dict()
+                    attempts.append(provenance)
+                    beliefs.append(
+                        {
+                            **provenance,
+                            "prompt": prompt,
+                            "raw_response": raw_response,
+                            "raw_response_hash": hashlib.sha256(
+                                raw_response.encode()
+                            ).hexdigest(),
+                            "raw_valid": True,
+                            "usable_output": True,
+                            "fallback": False,
+                            "transport_error": "",
+                            "normalization": {
+                                "version": "beliefmove.teacher-l1-weights.v1",
+                                "canonical_probability_error": 0.0,
+                            },
+                            "belief": belief,
+                        }
+                    )
+            (cache / "attempts.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in attempts), encoding="utf-8"
+            )
+            (cache / "beliefs.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in beliefs), encoding="utf-8"
+            )
+
+        report = build_smoke_report(
+            results_root,
+            model="fake:1b",
+            model_digest=digest,
+        )
+        self.assertEqual(report["gate"], "ready")
+        self.assertTrue(report["all_units_present"])
+        self.assertFalse(report["test_artifacts_read"])
+
+        tokyo_beliefs = next(
+            (results_root / "tist2015" / "Tokyo").rglob("beliefs.jsonl")
+        )
+        rows = [json.loads(line) for line in tokyo_beliefs.read_text(encoding="utf-8").splitlines()]
+        rows[0]["usable_output"] = False
+        rows[0]["raw_valid"] = False
+        rows[0]["fallback"] = True
+        rows[0]["response_format_hash"] = "f" * 64
+        tokyo_beliefs.write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+        invalid_report = build_smoke_report(
+            results_root,
+            model="fake:1b",
+            model_digest=digest,
+            write=False,
+        )
+        self.assertEqual(invalid_report["gate"], "incomplete")
+        tokyo_unit = next(
+            item for item in invalid_report["units"] if item["unit"] == "Tokyo"
+        )
+        self.assertFalse(tokyo_unit["checks"]["response_format_provenance_valid"])
+        self.assertFalse(tokyo_unit["checks"]["all_outputs_valid"])
+
+        tokyo_attempts = next(
+            (results_root / "tist2015" / "Tokyo").rglob("attempts.jsonl")
+        )
+        with tokyo_attempts.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"query_id": "unexpected", "split": "train"}) + "\n")
+        journal_report = build_smoke_report(
+            results_root,
+            model="fake:1b",
+            model_digest=digest,
+            write=False,
+        )
+        tokyo_unit = next(
+            item for item in journal_report["units"] if item["unit"] == "Tokyo"
+        )
+        self.assertFalse(tokyo_unit["checks"]["attempt_ids_exact"])
+        self.assertFalse(tokyo_unit["checks"]["no_dangling_ids"])
+        self.assertEqual(
+            tokyo_unit["journal_diagnostics"]["unexpected_attempt_ids"],
+            ["unexpected"],
+        )
+        with self.assertRaisesRegex(SystemExit, "3"):
+            main(
+                [
+                    "smoke-report",
+                    "--results-root",
+                    str(results_root),
+                    "--model",
+                    "fake:1b",
+                    "--model-digest",
+                    digest,
+                    "--require-ready",
+                ]
+            )
 
     def test_official_teacher_cache_requires_pinned_model_digest(self) -> None:
         prepare(self._unit_args())
@@ -285,6 +493,43 @@ class BeliefMoveExperimentTests(unittest.TestCase):
         args.model_digest = "unresolved"
         with self.assertRaisesRegex(ValueError, "64-hex SHA-256 --model-digest"):
             teacher_cache(args, llm_factory=lambda *_: FakeLLM())
+
+    def test_smoke_teacher_cache_also_requires_pinned_model_digest(self) -> None:
+        prepare(self._unit_args())
+        args = self._teacher_args("smoke")
+        args.model_digest = "unresolved"
+        with self.assertRaisesRegex(ValueError, "64-hex SHA-256 --model-digest"):
+            teacher_cache(args, llm_factory=lambda *_: FakeLLM())
+
+    def test_pilot_report_rejects_duplicate_base_caches_per_unit(self) -> None:
+        results_root = self.root / "duplicate-pilot-results"
+        for dataset, unit in (
+            ("tist2015", "Tokyo"),
+            ("www2019", "Shanghai"),
+            ("yjmob100k", "YJMob"),
+        ):
+            for suffix in ("first", "second"):
+                cache = results_root / dataset / unit / "teacher" / suffix
+                cache.mkdir(parents=True)
+                (cache / "selection_manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "dataset": dataset,
+                            "unit": unit,
+                            "cache_tag": "pilot",
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (cache / "manifest.json").write_text("{}", encoding="utf-8")
+        report = build_pilot_report(results_root, write=False)
+        self.assertEqual(report["gate"], "incomplete")
+        self.assertFalse(report["all_units_present"])
+        self.assertEqual(len(report["units"]), 3)
+        self.assertTrue(
+            all(not item["checks"]["unique_base_cache"] for item in report["units"])
+        )
+        self.assertTrue(all(len(item["candidate_caches"]) == 2 for item in report["units"]))
 
     def test_prompt_requires_fixed_ontology_and_rejects_target_fields(self) -> None:
         query = {
@@ -301,6 +546,41 @@ class BeliefMoveExperimentTests(unittest.TestCase):
             self.assertIn(label, prompt)
         with self.assertRaisesRegex(ValueError, "forbidden target"):
             build_teacher_prompt({**query, "target_region": "r0"})
+
+    def test_teacher_response_format_is_strict_and_parser_normalizes_weights(self) -> None:
+        support = ("r0", "r1", "__OTHER__")
+        response_format = build_teacher_response_format(support)
+        schema = response_format["json_schema"]["schema"]
+        self.assertTrue(response_format["json_schema"]["strict"])
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(
+            set(schema["properties"]["next_region"]["required"]), set(support)
+        )
+
+        payload = {
+            "activity": {key: 2.0 for key in ACTIVITY_ONTOLOGY},
+            "intent": {key: 3.0 for key in INTENT_ONTOLOGY},
+            "destination": {key: 4.0 for key in DESTINATION_ONTOLOGY},
+            "next_region": {"r0": 2.0, "r1": 1.0, "__OTHER__": 1.0},
+            "confidence": 0.75,
+        }
+        parsed = parse_teacher_response(json.dumps(payload), support)
+        self.assertAlmostEqual(sum(parsed["activity"].values()), 1.0)
+        self.assertAlmostEqual(sum(parsed["next_region"].values()), 1.0)
+        self.assertAlmostEqual(parsed["next_region"]["r0"], 0.5)
+        self.assertTrue(parsed["_normalization"]["applied"])
+
+        payload["next_region"] = {"r0": 1.0, "r1": 1.0}
+        with self.assertRaisesRegex(ValueError, "exactly the fixed support"):
+            parse_teacher_response(json.dumps(payload), support)
+        payload["next_region"] = {key: 0.0 for key in support}
+        with self.assertRaisesRegex(ValueError, "positive finite mass"):
+            parse_teacher_response(json.dumps(payload), support)
+
+    def test_teacher_parser_rejects_duplicate_keys(self) -> None:
+        raw = '{"activity":{},"activity":{},"intent":{},"destination":{},"next_region":{},"confidence":0.5}'
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            parse_teacher_response(raw, ("r0",))
 
     def test_lock_rejects_hand_written_or_stale_pilot_summary(self) -> None:
         results_root = self.root / "pilot-results"

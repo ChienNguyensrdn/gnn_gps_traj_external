@@ -230,7 +230,8 @@ resumable commands are in `phase2/README.md`. New artifacts are isolated under
 The earlier RQ3/RQ7/RQ8 pipelines are useful controls but do not implement the
 full architecture described in `BeliefMove_y_tuong_va_huong_dan_cai_dat.docx`.
 The leakage-safe replacement is isolated under `phase3_beliefmove/` and
-`results/beliefmove-faithful/v1/`.
+`results/beliefmove-faithful/v2/`. Artifacts produced by the earlier v1
+teacher-response contract remain immutable and must not be resumed into v2.
 
 ```bash
 # No LLM call: audit inputs and build train-only spatial representations.
@@ -238,7 +239,15 @@ The leakage-safe replacement is isolated under `phase3_beliefmove/` and
 ./scripts/beliefmove_faithful.sh prepare
 
 # Small train/validation-only schema check; teacher collector never reads test.
-OLLAMA_MODEL=qwen2.5:7b ./scripts/beliefmove_faithful.sh smoke
+# Use the full 64-hex digest returned by the same Ollama server that serves the
+# model. The smoke action also builds the cross-dataset smoke report and fails
+# closed unless every representative unit passes.
+OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
+  ./scripts/beliefmove_faithful.sh smoke
+OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
+  ./scripts/beliefmove_faithful.sh smoke-report
 ./scripts/beliefmove_faithful.sh status
 ```
 

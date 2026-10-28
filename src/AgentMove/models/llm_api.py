@@ -202,7 +202,13 @@ class LLMWrapper:
             prompt_text = prompt_text[-min(self.hyperparams['max_input_tokens'] * 3, len(prompt_text)):]
         return prompt_text
 
-    def _request_once(self, prompt_text, disable_sdk_retries=False):
+    def _request_once(
+        self,
+        prompt_text,
+        disable_sdk_retries=False,
+        *,
+        response_format=None,
+    ):
         """Issue one wrapper-level request and record success or failure.
 
         ``disable_sdk_retries`` is required by strict information-budget
@@ -218,12 +224,15 @@ class LLMWrapper:
         client = self.client.with_options(max_retries=0) if disable_sdk_retries else self.client
         started = time.perf_counter()
         try:
-            response = client.chat.completions.create(
-                model=self.api_model_name,
-                messages=system_messages + [{"role": "user", "content": prompt_text}],
-                max_tokens=self.hyperparams["max_tokens"],
-                temperature=self.hyperparams["temperature"]
-            )
+            request = {
+                "model": self.api_model_name,
+                "messages": system_messages + [{"role": "user", "content": prompt_text}],
+                "max_tokens": self.hyperparams["max_tokens"],
+                "temperature": self.hyperparams["temperature"],
+            }
+            if response_format is not None:
+                request["response_format"] = response_format
+            response = client.chat.completions.create(**request)
         except Exception as exc:
             elapsed = time.perf_counter() - started
             self.__class__._call_stats.append({
@@ -259,9 +268,13 @@ class LLMWrapper:
     def get_response(self, prompt_text):
         return self._request_once(prompt_text, disable_sdk_retries=False)
 
-    def get_response_once(self, prompt_text):
+    def get_response_once(self, prompt_text, *, response_format=None):
         """Make exactly one physical API attempt with all automatic retries off."""
-        return self._request_once(prompt_text, disable_sdk_retries=True)
+        return self._request_once(
+            prompt_text,
+            disable_sdk_retries=True,
+            response_format=response_format,
+        )
 
 
 if __name__ == "__main__":
