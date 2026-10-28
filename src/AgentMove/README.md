@@ -225,6 +225,30 @@ YJMob100K. Its protocols, expected outcomes, result-table templates and
 resumable commands are in `phase2/README.md`. New artifacts are isolated under
 `results/phase2/`, leaving the Phase 1 results frozen.
 
+### BeliefMove faithful structured-belief protocol
+
+The earlier RQ3/RQ7/RQ8 pipelines are useful controls but do not implement the
+full architecture described in `BeliefMove_y_tuong_va_huong_dan_cai_dat.docx`.
+The leakage-safe replacement is isolated under `phase3_beliefmove/` and
+`results/beliefmove-faithful/v1/`.
+
+```bash
+# No LLM call: audit inputs and build train-only spatial representations.
+./scripts/beliefmove_faithful.sh audit
+./scripts/beliefmove_faithful.sh prepare
+
+# Small train/validation-only schema check; teacher collector never reads test.
+OLLAMA_MODEL=qwen2.5:7b ./scripts/beliefmove_faithful.sh smoke
+./scripts/beliefmove_faithful.sh status
+```
+
+See `phase3_beliefmove/README.md` for the locked M1--M5 definitions, request
+budgets, go/no-go gates and the implementation-status boundary. The
+train/validation-only pilot is implemented; confirmatory actions remain
+fail-closed until per-query quantitative support is bound and the remaining
+M1--M5 trainer/evaluator is present. No action falls back to legacy Phase-2
+inference-time fusion code.
+
 # 🔧 Debugging Tips
 1. If you encounter any exceptions, you can try relaxing the try-except control in the code to help with debugging.
 2. You can refer to the `launch.json` file in the `.vscode` directory to enable remote debugging.

@@ -1,0 +1,222 @@
+{
+  "protocol_name": "BeliefMove faithful structured-belief protocol",
+  "version": "v1",
+  "primary_query_protocol": "all chronological prefixes; reset state at trajectory boundary",
+  "secondary_query_protocol": "last prefix per trajectory",
+  "estimand": "predict the next location from the observed prefix at a known prediction timestamp; the next POI, category and spatial region remain hidden",
+  "known_query_covariates": ["prediction_timestamp"],
+  "datasets": {
+    "tist2015": {
+      "units": [
+        "Tokyo",
+        "Nairobi",
+        "NewYork",
+        "Sydney",
+        "CapeTown",
+        "Paris",
+        "Beijing",
+        "Mumbai",
+        "SanFrancisco",
+        "London",
+        "SaoPaulo",
+        "Moscow"
+      ],
+      "aggregation": "equal-weight macro over exactly 12 cities"
+    },
+    "www2019": {
+      "units": ["Shanghai"],
+      "aggregation": "mean over seeds"
+    },
+    "yjmob100k": {
+      "units": ["YJMob"],
+      "aggregation": "mean over seeds",
+      "coordinate_semantics": "anonymous 500m cells; do not call them GPS coordinates"
+    }
+  },
+  "splits": {
+    "cpt_and_transition_fit": ["train"],
+    "llm_teacher_cache": ["train", "validation"],
+    "alpha_temperature_router_selection": ["validation"],
+    "final_evaluation": ["test"]
+  },
+  "region_representation": {
+    "source": "train-only coordinates and candidate metadata",
+    "cell_size_meters": 500,
+    "unknown_region": "__UNK_REGION__",
+    "teacher_support_smoke": "train-only frequent regions plus __UNK_REGION__ and __OTHER__",
+    "teacher_support_confirmatory": "frozen quantitative top-k regions plus __UNK_REGION__ and __OTHER__",
+    "confirmatory_requires_quantitative_support": true,
+    "forbidden": [
+      "building region vocabulary from validation/test",
+      "calling a raw POI identifier a spatial region",
+      "passing the next POI, category or spatial-region label to the LLM prompt",
+      "using any target-derived field other than the protocol-declared prediction timestamp"
+    ]
+  },
+  "ontology": {
+    "activity": [
+      "residential",
+      "work-education",
+      "food-retail-service",
+      "leisure-social",
+      "transport-outdoor",
+      "other"
+    ],
+    "intent": [
+      "same-poi",
+      "within-zone",
+      "return-known-poi",
+      "new-poi-known-zone",
+      "new-zone"
+    ],
+    "destination": [
+      "home-residential",
+      "work-education",
+      "food-retail-service",
+      "leisure-social",
+      "transport-outdoor",
+      "other"
+    ]
+  },
+  "bayesian_student": {
+    "state": ["activity", "intent", "destination", "next_region"],
+    "factorization": [
+      "P(activity_t | prediction_time_slot_t, observed_time_slot_t-1, activity_t-1)",
+      "P(intent_t | activity_t, previous_region, return_flags)",
+      "P(destination_t | activity_t, intent_t)",
+      "P(next_region_t | destination_t, previous_region)"
+    ],
+    "hard_label_source": {
+      "activity_and_destination": "frozen category-to-ontology map built before pilot; unseen categories map to other",
+      "intent": "same-poi, within-zone, return-known-poi, new-poi-known-zone, or new-zone derived causally from prefix and training target"
+    },
+    "teacher_soft_count_weight": "teacher confidence; invalid/fallback teacher output contributes zero teacher count",
+    "distillation": "expected soft counts followed by validation-selected CPT blending; the LLM output is never treated as a hard label",
+    "required_artifacts_before_pilot": [
+      "representation/ontology.json with the frozen category-to-ontology contract",
+      "pilot_evaluation.json generated from raw caches"
+    ],
+    "required_artifacts_before_confirmatory": [
+      "per-query frozen-quantitative region support",
+      "protocol_lock.json generated from a passing pilot"
+    ]
+  },
+  "teacher": {
+    "role": "structured mobility-belief teacher, not ground truth",
+    "fields": ["activity", "intent", "destination", "next_region", "confidence"],
+    "temperature": 0.0,
+    "strict_json": true,
+    "one_physical_request_per_uncached_query": true,
+    "cache": "immutable and content addressed",
+    "required_hashes": ["dataset", "source", "ontology", "prompt", "model"]
+  },
+  "cpt_blend_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
+  "router_primary_call_rate_cap": 0.1,
+  "router_sensitivity_call_rate_caps": [0.05, 0.1, 0.25],
+  "seeds": [42, 43, 44],
+  "variants": {
+    "M1-data-bn": {
+      "data_cpt": true,
+      "llm_distillation": false,
+      "belief_memory": false,
+      "adaptive_llm": false,
+      "quantitative_likelihood": false,
+      "calibration": false
+    },
+    "M2-llm-distilled": {
+      "data_cpt": true,
+      "llm_distillation": true,
+      "belief_memory": false,
+      "adaptive_llm": false,
+      "quantitative_likelihood": false,
+      "calibration": false
+    },
+    "M3-belief-memory": {
+      "data_cpt": true,
+      "llm_distillation": true,
+      "belief_memory": true,
+      "adaptive_llm": false,
+      "quantitative_likelihood": false,
+      "calibration": false
+    },
+    "M4-adaptive-reasoning": {
+      "data_cpt": true,
+      "llm_distillation": true,
+      "belief_memory": true,
+      "adaptive_llm": true,
+      "quantitative_likelihood": false,
+      "calibration": false
+    },
+    "M5-beliefmove-full": {
+      "data_cpt": true,
+      "llm_distillation": true,
+      "belief_memory": true,
+      "adaptive_llm": true,
+      "quantitative_teacher_distillation": true,
+      "quantitative_likelihood_at_deployment": false,
+      "calibration": true
+    }
+  },
+  "comparators": [
+    "quantitative-only",
+    "always-structured-llm",
+    "never-llm",
+    "random-budget-matched"
+  ],
+  "controls": [
+    "M2-shuffled-teacher-beliefs-within-dataset-time-activity-stratum",
+    "M3-reset",
+    "M3-reverse",
+    "never",
+    "always",
+    "random-budget-matched",
+    "oracle-diagnostic",
+    "M5-no-quantitative-teacher",
+    "M5-quantitative-only",
+    "direct-next-location-llm-on-the-same-routed-query-set"
+  ],
+  "primary_metrics": ["recall@1", "recall@5", "recall@10", "mrr"],
+  "probabilistic_metrics": ["nll", "brier", "ece"],
+  "efficiency_metrics": ["llm_call_rate", "physical_requests", "tokens_per_query", "latency_p50", "latency_p95", "rss_peak_mb"],
+  "inference": {
+    "resampling_unit": "user cluster; trajectory nested within user for all-prefix",
+    "confidence_interval": "paired cluster bootstrap 95%",
+    "multiple_testing": "Holm correction within each confirmatory family"
+  },
+  "confirmatory_comparisons": [
+    "M2-llm-distilled vs M1-data-bn",
+    "M3-belief-memory vs M2-llm-distilled",
+    "M4-adaptive-reasoning vs M3-belief-memory",
+    "M4-adaptive-reasoning vs random-budget-matched at equal realized call rate",
+    "M5-beliefmove-full vs M4-adaptive-reasoning",
+    "M5-beliefmove-full vs always-structured-llm for quality and cost"
+  ],
+  "success_rules": {
+    "llm_distillation": "M2 improves M1 on NLL and is not worse by more than 0.005 MRR in at least two dataset families",
+    "belief_memory": "M3 improves M2 on all-prefix MRR in at least two dataset families",
+    "adaptive_reasoning": "M4 improves M3 and random-budget-matched on MRR in at least two dataset families with call rate at most 0.10",
+    "quantitative_teacher": "M5 improves M4 on NLL or MRR in at least two dataset families",
+    "full_system": "M5 improves M1 on all three dataset families, is within 0.01 absolute MRR of always-LLM, uses at most 10% of queries as LLM calls and at most 15% of always-LLM tokens/query, has p95 latency at most 25% of always-LLM, and degrades ECE by no more than 0.01"
+  },
+  "stop_rules": {
+    "smoke": "schema parse must be 100%, probability error below 1e-6, prompts contain no target fields, and cache resume/hash tests pass",
+    "pilot": "valid output at least 0.95, transport error at most 0.01, teacher beats empirical prior for activity and destination, alpha is selected on one deterministic validation partition and M2 strictly improves M1 NLL on the disjoint held-out validation partition in every pilot domain, and repeated valid-output median JSD is at most 0.10",
+    "distillation": "do not claim or expand M2 if M2 does not beat M1",
+    "routing": "do not run a large online-LLM test if validation shows no positive realized LLM gain or router AUC is at most 0.5",
+    "publication": "do not merge legacy Phase-2 inference-time fusion results with this protocol"
+  },
+  "budgets": {
+    "smoke_units": ["TIST2015-Tokyo", "WWW2019-Shanghai", "YJMob100K-YJMob"],
+    "smoke_train_per_unit": 20,
+    "smoke_validation_per_unit": 20,
+    "pilot_train_per_unit": 500,
+    "pilot_validation_per_unit": 200,
+    "pilot_repeat_validation_per_unit": 50,
+    "pilot_repeat_count": 3,
+    "pilot_max_physical_requests": 2550,
+    "confirmatory_train_per_unit": 1000,
+    "confirmatory_validation_per_unit": 250,
+    "confirmatory_test_panel_per_unit": 500,
+    "confirmatory_max_physical_requests": 24500
+  }
+}
