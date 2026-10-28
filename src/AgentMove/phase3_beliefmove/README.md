@@ -205,6 +205,24 @@ SIGNIFICANCE_ITERATIONS=10000 \
 ./phase3_beliefmove/scripts/run.sh report
 ```
 
+`audit` với `gate=ready` chỉ xác nhận rằng dữ liệu nguồn và checkpoint định
+lượng tồn tại; nó chưa có nghĩa là unit đã được prepare. Một unit chỉ hoàn
+thành bước này khi có dòng cuối `"action":"prepare","gate":"ready"` và
+`status` trả về `"prepared":true`. Trong lúc đọc dữ liệu lớn, `prepare` in
+tiến độ sau mỗi 100.000 dòng và sau khi dựng xong prefix của từng split.
+
+Nếu một lần chạy bị ngắt, chỉ tiếp tục unit chưa hoàn thành thay vì đọc lại các
+unit trước đó. Ví dụ:
+
+```bash
+BELIEFMOVE_DATASETS=tist2015 TIST_CITIES=Moscow \
+  ./phase3_beliefmove/scripts/run.sh status
+BELIEFMOVE_DATASETS=tist2015 TIST_CITIES=Moscow \
+  ./phase3_beliefmove/scripts/run.sh prepare
+```
+
+Artifact được ghi nguyên tử và bất biến, nên chạy lại cùng unit là an toàn.
+
 Có thể giới hạn khi debug:
 
 ```bash

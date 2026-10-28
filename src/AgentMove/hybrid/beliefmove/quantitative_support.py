@@ -131,9 +131,14 @@ def _column(fieldnames: Sequence[str], choices: Sequence[str]) -> str:
     raise ValueError(f"CSV is missing one of required columns: {list(choices)}")
 
 
-def _candidate_id(raw: object, candidate_ids: Sequence[str]) -> str:
+def _candidate_id(
+    raw: object,
+    candidate_ids: Sequence[str],
+    candidate_lookup: set[str] | frozenset[str] | None = None,
+) -> str:
     value = str(raw).strip()
-    if value in candidate_ids:
+    lookup = candidate_lookup if candidate_lookup is not None else frozenset(candidate_ids)
+    if value in lookup:
         return value
     try:
         index = int(float(value))
@@ -156,6 +161,7 @@ def _source_trajectories(path: Path, candidate_ids: Sequence[str]) -> dict[tuple
     # ``prepare`` so query/source provenance is byte-stable across timezones.
     from .experiment import _parse_timestamp
 
+    candidate_lookup = frozenset(candidate_ids)
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -171,7 +177,9 @@ def _source_trajectories(path: Path, candidate_ids: Sequence[str]) -> dict[tuple
             )
             grouped[key].append(
                 {
-                    "poi_id": _candidate_id(row.get(poi_col, ""), candidate_ids),
+                    "poi_id": _candidate_id(
+                        row.get(poi_col, ""), candidate_ids, candidate_lookup
+                    ),
                     "observed_time": observed_time,
                     "chronological_key": chronological_key,
                     "source_position": position,

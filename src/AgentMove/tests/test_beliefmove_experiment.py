@@ -12,6 +12,7 @@ from hybrid.beliefmove.experiment import (
     ACTIVITY_ONTOLOGY,
     DESTINATION_ONTOLOGY,
     INTENT_ONTOLOGY,
+    _candidate_id,
     _prefix_queries,
     _read_split,
     build_pilot_report,
@@ -213,6 +214,14 @@ class BeliefMoveExperimentTests(unittest.TestCase):
         self.assertEqual(queries[0]["observed_prefix"][0]["observed_time"], "2023-12-31T23:00:00.000000Z")
         self.assertEqual(queries[0]["query_time"], "2023-12-31T23:30:00.000000Z")
 
+    def test_candidate_id_lookup_preserves_literal_before_numeric_index(self) -> None:
+        candidate_ids = ("1", "venue-1", "venue-2")
+        candidate_lookup = frozenset(candidate_ids)
+        self.assertEqual(_candidate_id("1", candidate_ids, candidate_lookup), "1")
+        self.assertEqual(_candidate_id("2.0", candidate_ids, candidate_lookup), "venue-2")
+        self.assertEqual(_candidate_id("99", candidate_ids, candidate_lookup), "99")
+        self.assertEqual(_candidate_id("unknown", candidate_ids, candidate_lookup), "unknown")
+
     def test_timestamp_parser_fails_closed_and_timezone_is_last_resort(self) -> None:
         invalid = self.root / "invalid-time.csv"
         self._write_csv_at(
@@ -406,6 +415,14 @@ class BeliefMoveExperimentTests(unittest.TestCase):
         self.assertTrue(prepared["prepared"])
         self.assertEqual(prepared["stage"], "prepared")
         self.assertEqual(prepared["gate"], "prepared")
+        (self.output / "targets" / "test.jsonl").unlink()
+        incomplete = status(status_args)
+        self.assertFalse(incomplete["prepared"])
+        self.assertEqual(incomplete["stage"], "incomplete")
+        self.assertIn(
+            str(self.output / "targets" / "test.jsonl"),
+            incomplete["missing"],
+        )
         with self.assertRaisesRegex(SystemExit, "NOT_IMPLEMENTED"):
             main(["train", "--results-root", str(self.root)])
 

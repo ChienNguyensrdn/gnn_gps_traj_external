@@ -16,6 +16,7 @@ import json
 import math
 import os
 import re
+import sys
 import tempfile
 import time
 from collections import Counter, defaultdict
@@ -175,9 +176,14 @@ def _column(fieldnames: Sequence[str], choices: Sequence[str], *, required: bool
     return None
 
 
-def _candidate_id(raw: object, candidate_ids: Sequence[str]) -> str:
+def _candidate_id(
+    raw: object,
+    candidate_ids: Sequence[str],
+    candidate_lookup: set[str] | frozenset[str] | None = None,
+) -> str:
     value = str(raw).strip()
-    if value in candidate_ids:
+    lookup = candidate_lookup if candidate_lookup is not None else frozenset(candidate_ids)
+    if value in lookup:
         return value
     try:
         index = int(float(value))
@@ -217,6 +223,7 @@ def _parse_timestamp(raw: object, *, path: Path, row_number: int, column: str) -
 
 
 def _read_split(path: Path, candidate_ids: Sequence[str]) -> list[dict[str, Any]]:
+    candidate_lookup = frozenset(candidate_ids)
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         fieldnames = tuple(reader.fieldnames or ())
@@ -235,7 +242,7 @@ def _read_split(path: Path, candidate_ids: Sequence[str]) -> list[dict[str, Any]
         )
         rows: list[dict[str, Any]] = []
         for source_position, row in enumerate(reader):
-            poi_id = _candidate_id(row.get(poi_col, ""), candidate_ids)
+            poi_id = _candidate_id(row.get(poi_col, ""), candidate_ids, candidate_lookup)
             observed_time, chronological_key = _parse_timestamp(
                 row.get(time_col, ""),
                 path=path,
@@ -255,6 +262,20 @@ def _read_split(path: Path, candidate_ids: Sequence[str]) -> list[dict[str, Any]
                     "_chronological_key": chronological_key,
                 }
             )
+            if len(rows) % 100_000 == 0:
+                print(
+                    json.dumps(
+                        {
+                            "action": "prepare-progress",
+                            "stage": "read-split",
+                            "path": str(path),
+                            "rows": len(rows),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
     return rows
 
 
@@ -272,11 +293,12 @@ def _fit_representation(
     candidate_ids: Sequence[str],
     region_cell_meters: float,
 ) -> tuple[dict[str, Any], dict[str, str], Counter[str]]:
+    candidate_lookup = frozenset(candidate_ids)
     by_poi: dict[str, list[tuple[float, float]]] = defaultdict(list)
     poi_counts: Counter[str] = Counter()
     for row in train_rows:
         poi_id = str(row["poi_id"])
-        if poi_id not in candidate_ids:
+        if poi_id not in candidate_lookup:
             continue
         poi_counts[poi_id] += 1
         if _valid_coordinate(row.get("latitude"), row.get("longitude")):
@@ -285,7 +307,7 @@ def _fit_representation(
     if dataset == "yjmob100k":
         # YJMob locations are anonymous grid cells, not GPS coordinates.
         vocabulary = AnonymousCellRegionVocabulary.fit(
-            (row["poi_id"] for row in train_rows if str(row["poi_id"]) in candidate_ids),
+            (row["poi_id"] for row in train_rows if str(row["poi_id"]) in candidate_lookup),
             split="train",
         )
         poi_region = {
@@ -434,10 +456,24 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     candidate_ids = [str(value) for value in json.loads(candidate_path.read_text(encoding="utf-8"))]
     if not candidate_ids or len(candidate_ids) != len(set(candidate_ids)):
         raise ValueError("candidate_ids.json must be a non-empty unique list")
-    source_rows = {
-        split: _read_split(_resolve_csv(data_base, split), candidate_ids)
-        for split in ("train", "validation", "test")
-    }
+    source_rows: dict[str, list[dict[str, Any]]] = {}
+    for split in ("train", "validation", "test"):
+        source_rows[split] = _read_split(_resolve_csv(data_base, split), candidate_ids)
+        print(
+            json.dumps(
+                {
+                    "action": "prepare-progress",
+                    "dataset": args.dataset,
+                    "unit": args.unit,
+                    "stage": "split-read",
+                    "split": split,
+                    "rows": len(source_rows[split]),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
     representation, poi_region, region_counts = _fit_representation(
         args.dataset, source_rows["train"], candidate_ids, args.region_cell_meters
     )
@@ -448,6 +484,21 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     for split in ("train", "validation", "test"):
         queries_by_split[split], targets_by_split[split] = _prefix_queries(
             args.dataset, args.unit, split, source_rows[split], poi_region, candidate_regions
+        )
+        print(
+            json.dumps(
+                {
+                    "action": "prepare-progress",
+                    "dataset": args.dataset,
+                    "unit": args.unit,
+                    "stage": "prefixes-built",
+                    "split": split,
+                    "queries": len(queries_by_split[split]),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+            flush=True,
         )
 
     _write_json_immutable(output_root / "representation" / "regions.json", representation)
@@ -924,7 +975,11 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
         output_root / "representation" / "regions.json",
         output_root / "representation" / "poi_region_map.json",
         output_root / "representation" / "ontology.json",
-    ] + [output_root / "queries" / f"{split}.jsonl" for split in ("train", "validation", "test")]
+    ] + [
+        output_root / artifact / f"{split}.jsonl"
+        for artifact in ("queries", "targets")
+        for split in ("train", "validation", "test")
+    ]
     missing = [str(path) for path in prepared if not path.is_file()]
     caches = [
         _teacher_cache_status(path.parent)
