@@ -103,6 +103,23 @@ class DirectQueryLLMTests(unittest.TestCase):
             collect(args, wrapper=second)
             self.assertEqual(second.prompts, [])
 
+    def test_resume_finalizes_missing_npz_without_another_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); args, wrapper = self.make_case(root, '{"ranking":["b","a"]}')
+            collect(args, wrapper=wrapper)
+            (root / "output/predictions.npz").unlink()
+            interrupted = status(Path(args.input), Path(args.output_dir), args.limit, args.split)
+            self.assertEqual(interrupted["completed"], 1)
+            self.assertTrue(interrupted["metrics_ready"])
+            self.assertFalse(interrupted["predictions_npz_ready"])
+            self.assertEqual(interrupted["gate"], "incomplete")
+            second = FakeWrapper('{"ranking":["a","b"]}')
+            collect(args, wrapper=second)
+            self.assertEqual(second.prompts, [])
+            self.assertTrue((root / "output/predictions.npz").is_file())
+            self.assertEqual(status(Path(args.input), Path(args.output_dir),
+                                    args.limit, args.split)["gate"], "ready")
+
     def test_incomplete_response_falls_back_without_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); args, wrapper = self.make_case(root, '{"ranking":["b"]}')

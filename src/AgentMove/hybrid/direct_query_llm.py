@@ -367,13 +367,25 @@ def _prepare_queries(args, rows: list[dict], logits: np.ndarray, ids: list[str],
 
 
 def _write_npz(path: Path, ordered: list[dict]) -> None:
-    np.savez_compressed(path,
-                        query_id=np.asarray([str(row["query_id"]) for row in ordered]),
-                        user_id=np.asarray([str(row["user_id"]) for row in ordered]),
-                        query_index=np.arange(len(ordered)), labels=np.arange(len(ordered)),
-                        quantitative_ranks=np.asarray([row["quantitative_rank"] for row in ordered], dtype=np.int32),
-                        direct_ranks=np.asarray([row["true_rank"] for row in ordered], dtype=np.int32),
-                        ranks=np.asarray([row["true_rank"] for row in ordered], dtype=np.int32))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile("wb", dir=path.parent, prefix=f".{path.name}.",
+                                         suffix=".npz", delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            np.savez_compressed(
+                handle,
+                query_id=np.asarray([str(row["query_id"]) for row in ordered]),
+                user_id=np.asarray([str(row["user_id"]) for row in ordered]),
+                query_index=np.arange(len(ordered)), labels=np.arange(len(ordered)),
+                quantitative_ranks=np.asarray(
+                    [row["quantitative_rank"] for row in ordered], dtype=np.int32),
+                direct_ranks=np.asarray([row["true_rank"] for row in ordered], dtype=np.int32),
+                ranks=np.asarray([row["true_rank"] for row in ordered], dtype=np.int32))
+            handle.flush(); os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists(): temporary.unlink()
 
 
 def _prediction_row(args, item: dict, temperature: float, usage: dict,
@@ -516,7 +528,10 @@ def collect(args, wrapper=None) -> dict:
         "max_original_prompt_estimated_tokens": prompt_summary["max_original_prompt_estimated_tokens"],
         "prompts_truncated": False,
     }
-    _atomic_json(output / "metrics.json", metrics); _write_npz(output / "predictions.npz", ordered)
+    # The completion marker is written last.  An interrupted finalization can
+    # therefore be resumed from JSONL without being reported as ready.
+    _write_npz(output / "predictions.npz", ordered)
+    _atomic_json(output / "metrics.json", metrics)
     print(json.dumps({"output": str(output), "metrics": metrics}, ensure_ascii=False))
     return metrics
 
@@ -531,6 +546,8 @@ def status(input_path: Path, output_dir: Path, limit: int | None, split: str) ->
     completed_rows = [cached[query_id] for query_id in expected if query_id in cached]
     mean_latency = (float(np.mean([row.get("latency_seconds", 0.0) for row in completed_rows]))
                     if completed_rows else None)
+    metrics_ready = (output_dir / "metrics.json").is_file()
+    predictions_npz_ready = (output_dir / "predictions.npz").is_file()
     payload = {"split": split, "completed": complete, "total": len(expected),
                "remaining": len(expected) - complete,
                "physical_requests": int(sum(row.get("api_calls", 1) for query_id, row in attempted.items()
@@ -545,8 +562,10 @@ def status(input_path: Path, output_dir: Path, limit: int | None, split: str) ->
                "unexpected_predictions": len(diagnostics["unexpected_predictions"]),
                "mean_latency_seconds": mean_latency,
                "eta_seconds": mean_latency * (len(expected) - complete) if mean_latency is not None else None,
+               "metrics_ready": metrics_ready,
+               "predictions_npz_ready": predictions_npz_ready,
                "gate": ("invalid" if any(diagnostics.values()) else
-                        "ready" if complete == len(expected) and (output_dir / "metrics.json").is_file()
+                        "ready" if complete == len(expected) and metrics_ready and predictions_npz_ready
                         else "incomplete")}
     print(json.dumps(payload)); return payload
 

@@ -43,11 +43,13 @@ def write_json_atomic(path: Path, payload):
 
 def save_npz_atomic(path: Path, **arrays):
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
+    handle = tempfile.NamedTemporaryFile("wb", dir=path.parent, prefix=f".{path.name}.",
                                          suffix=".npz", delete=False)
-    temporary = Path(handle.name); handle.close()
+    temporary = Path(handle.name)
     try:
-        np.savez_compressed(temporary, **arrays)
+        with handle:
+            np.savez_compressed(handle, **arrays)
+            handle.flush(); os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
         if temporary.exists(): temporary.unlink()
