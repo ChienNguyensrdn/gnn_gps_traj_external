@@ -28,13 +28,22 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from .cpt import BlendedCPT, DataCPT, TeacherSoftCountCPT
-from .ontology import ACTIVITY_ONTOLOGY, DESTINATION_ONTOLOGY, ontology_hash
+from .ontology import (
+    ACTIVITY_ONTOLOGY,
+    DESTINATION_ONTOLOGY,
+    INTENT_ONTOLOGY,
+    ontology_hash,
+)
 from .schema import StructuredBelief, hash_text
 
 
 PILOT_EVALUATION_VERSION = "beliefmove.pilot-evaluation.v2"
 TEACHER_CACHE_VERSION = "beliefmove.teacher-cache.v2"
 TEACHER_NORMALIZATION_VERSION = "beliefmove.teacher-l1-weights.v1"
+DANGLING_RECOVERY_VERSION = "beliefmove.dangling-attempt-recovery.v1"
+DANGLING_RECOVERY_REASON = (
+    "IndeterminateOutcome: collector stopped after durable attempt and before durable belief"
+)
 ONTOLOGY_LABEL_VERSION = "beliefmove.ontology-labels.v1"
 ALPHA_GRID = (0.0, 0.25, 0.5, 0.75, 1.0)
 PILOT_SMOOTHING = 1.0
@@ -125,6 +134,35 @@ def _strict_count(value: Any, *, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise PilotEvaluationError(f"{name} must be a non-negative integer")
     return value
+
+
+def _expected_recovery_belief(
+    query: Mapping[str, Any],
+    prompt: str,
+    selection: Mapping[str, Any],
+) -> StructuredBelief:
+    """Recreate the only belief payload allowed for dangling recovery."""
+
+    regions = [str(value) for value in query.get("candidate_regions", [])]
+    if not regions:
+        raise PilotEvaluationError("dangling recovery query has empty region support")
+    model_identity = (
+        f"{selection.get('platform')}:{selection.get('model')}@"
+        f"{selection.get('model_digest')}"
+    )
+    return StructuredBelief.create(
+        query=_canonical_json(query),
+        prompt=prompt,
+        model_identity=model_identity,
+        activity={key: 1.0 if key == "other" else 0.0 for key in ACTIVITY_ONTOLOGY},
+        intent={key: 1.0 if key == "new-zone" else 0.0 for key in INTENT_ONTOLOGY},
+        destination={
+            key: 1.0 if key == "other" else 0.0
+            for key in DESTINATION_ONTOLOGY
+        },
+        next_region={key: 1.0 / len(regions) for key in regions},
+        confidence=0.0,
+    )
 
 
 def _teacher_record_contract(
@@ -578,6 +616,50 @@ def _cache(
             if attempt.get(key) != record.get(key):
                 raise PilotEvaluationError(
                     f"{role} attempt/belief provenance mismatch for query={query_id} field={key}"
+                )
+        recovery = record.get("recovery")
+        if recovery is not None:
+            expected_recovery = {
+                "version": DANGLING_RECOVERY_VERSION,
+                "kind": "indeterminate-outcome-fallback",
+                "reason": DANGLING_RECOVERY_REASON,
+                "request_outcome": "indeterminate",
+                "attempt_hash": _canonical_hash(attempt),
+                "selection_contract_hash": selection.get("selection_contract_hash"),
+                "request_budget_consumed": True,
+                "response_available": False,
+                "usage_known": False,
+            }
+            if role != "base" or recovery != expected_recovery:
+                raise PilotEvaluationError(
+                    f"{role} belief has invalid dangling-recovery provenance for query={query_id}"
+                )
+            expected_recovery_fields = {
+                "raw_response": "",
+                "raw_response_hash": hash_text(""),
+                "raw_valid": False,
+                "usable_output": False,
+                "fallback": True,
+                "fallback_reason": DANGLING_RECOVERY_REASON,
+                # Indeterminate process outcome is not a confirmed transport error.
+                "transport_error": "",
+                "latency_seconds": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "token_source": "unknown-indeterminate-outcome",
+            }
+            if any(
+                record.get(field) != expected
+                for field, expected in expected_recovery_fields.items()
+            ):
+                raise PilotEvaluationError(
+                    f"{role} belief has invalid dangling-recovery fields for query={query_id}"
+                )
+            expected_belief = _expected_recovery_belief(query, prompt, selection)
+            if belief.to_dict() != expected_belief.to_dict():
+                raise PilotEvaluationError(
+                    f"{role} belief is not the exact deterministic dangling-recovery "
+                    f"fallback for query={query_id}"
                 )
         _teacher_record_contract(record, belief, role=role, query_id=query_id)
         if bool(record.get("fallback")) and belief.confidence != 0.0:

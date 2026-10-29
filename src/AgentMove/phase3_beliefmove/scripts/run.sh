@@ -62,6 +62,35 @@ pilot_unit() {
     --repeat-count "$PILOT_REPEAT_COUNT"
 }
 
+recover_dangling_unit() {
+  is_pilot_unit || return 0
+  run_cli recover-dangling \
+    --dataset "$BM_DATASET" --unit "$BM_UNIT" \
+    --data-base "$BM_DATA_BASE" --output-root "$BM_OUTPUT" \
+    --model "$OLLAMA_MODEL" --model-digest "$OLLAMA_MODEL_DIGEST"
+}
+
+recover_dangling() {
+  # Recovery is a targeted provenance repair, never a bulk cache-cleanup
+  # operation.  Require exactly one selected representative unit so a default
+  # invocation cannot append fallbacks to unrelated caches.
+  local dataset unit selected=0 pilot_targets=0
+  for dataset in $BELIEFMOVE_DATASETS; do
+    for unit in $(beliefmove_units "$dataset"); do
+      selected=$((selected + 1))
+      case "$dataset:$unit" in
+        tist2015:Tokyo|www2019:Shanghai|yjmob100k:YJMob)
+          pilot_targets=$((pilot_targets + 1)) ;;
+      esac
+    done
+  done
+  if [[ "$selected" -ne 1 || "$pilot_targets" -ne 1 ]]; then
+    echo "recover-dangling requires exactly one pilot unit; narrow BELIEFMOVE_DATASETS and, for TIST2015, TIST_CITIES (selected=$selected pilot_units=$pilot_targets)" >&2
+    return 2
+  fi
+  beliefmove_for_each_unit recover_dangling_unit
+}
+
 teacher_full_unit() { teacher_unit official "$TEACHER_TRAIN_LIMIT" "$TEACHER_VAL_LIMIT"; }
 
 fit_unit() {
@@ -110,6 +139,7 @@ case "$ACTION" in
       --model "$OLLAMA_MODEL" --model-digest "$OLLAMA_MODEL_DIGEST" \
       --require-ready
     beliefmove_for_each_unit pilot_unit ;;
+  recover-dangling) recover_dangling ;;
   pilot-report) run_cli pilot-report --results-root "$BELIEFMOVE_ROOT" ;;
   lock) run_cli lock --results-root "$BELIEFMOVE_ROOT" --protocol phase3_beliefmove/protocol.json ;;
   quantitative-support-audit)
@@ -133,6 +163,6 @@ case "$ACTION" in
       --iterations "${SIGNIFICANCE_ITERATIONS:-10000}" ;;
   report) run_cli report --results-root "$BELIEFMOVE_ROOT" ;;
   *)
-    echo "Usage: $0 <audit|prepare|smoke|smoke-report|pilot|pilot-report|lock|quantitative-support-audit|quantitative-support|teacher-offline|quantitative-teacher|train|test-bank|evaluate|controls|status|aggregate|report>" >&2
+    echo "Usage: $0 <audit|prepare|smoke|smoke-report|pilot|recover-dangling|pilot-report|lock|quantitative-support-audit|quantitative-support|teacher-offline|quantitative-teacher|train|test-bank|evaluate|controls|status|aggregate|report>" >&2
     exit 2 ;;
 esac

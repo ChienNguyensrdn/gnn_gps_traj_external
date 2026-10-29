@@ -117,7 +117,23 @@
     "model_digest": "required 64-hex SHA-256 from the serving Ollama instance for smoke, pilot, repeats, and official caches",
     "one_physical_request_per_uncached_query": true,
     "cache": "immutable and content addressed",
-    "required_hashes": ["dataset", "source", "ontology", "prompt_contract", "response_format", "model"]
+    "required_hashes": ["dataset", "source", "ontology", "prompt_contract", "response_format", "model"],
+    "interrupted_request_recovery": {
+      "scope": "base pilot cache only",
+      "trigger": "exactly one durable attempt exists for a selected query and no durable belief exists",
+      "maximum_dangling_attempts_per_cache": 1,
+      "network_action": "none; never retry the LLM request",
+      "journal_action": "keep the attempt immutable and append one deterministic fallback belief",
+      "request_outcome": "indeterminate",
+      "transport_error": "not asserted without evidence",
+      "accounting": "physical request budget is consumed, fallback count/rate increments, teacher confidence is zero and no teacher soft count is contributed",
+      "forbidden": [
+        "deleting or editing attempt/belief journals by hand",
+        "retrying the same query to replace the missing response",
+        "using recovery for invalid schema output, a missing cache, digest mismatch or manifest conflict",
+        "treating recovery as evidence that a scientific pilot gate passed"
+      ]
+    }
   },
   "cpt_blend_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
   "router_primary_call_rate_cap": 0.1,

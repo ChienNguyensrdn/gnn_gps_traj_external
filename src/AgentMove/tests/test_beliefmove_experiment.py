@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hybrid.beliefmove.experiment import (
     ACTIVITY_ONTOLOGY,
@@ -23,6 +25,7 @@ from hybrid.beliefmove.experiment import (
     main,
     parse_teacher_response,
     prepare,
+    recover_dangling,
     status,
     teacher_cache,
 )
@@ -156,6 +159,45 @@ class BeliefMoveExperimentTests(unittest.TestCase):
             train_limit=1,
             validation_limit=1,
             seed=42,
+        )
+
+    def _pilot_teacher_args(self, *, seed: int = 42) -> argparse.Namespace:
+        args = self._teacher_args("pilot")
+        args.train_limit = 500
+        args.validation_limit = 200
+        args.seed = seed
+        return args
+
+    def _recovery_args(self) -> argparse.Namespace:
+        return argparse.Namespace(
+            command="recover-dangling",
+            dataset="tist2015",
+            unit="Tokyo",
+            data_base=str(self.data),
+            output_root=str(self.output),
+            model="fake:1b",
+            platform="Fake",
+            model_digest="d" * 64,
+            query_root=None,
+        )
+
+    def _interrupted_base_pilot(self) -> tuple[Path, FakeLLM, bytes, bytes]:
+        prepare(self._unit_args())
+        fake = FakeLLM()
+        result = teacher_cache(
+            self._pilot_teacher_args(), llm_factory=lambda *_: fake
+        )
+        cache = Path(result["cache"])
+        beliefs_path = cache / "beliefs.jsonl"
+        belief_lines = beliefs_path.read_bytes().splitlines(keepends=True)
+        self.assertGreaterEqual(len(belief_lines), 2)
+        beliefs_path.write_bytes(b"".join(belief_lines[:-1]))
+        (cache / "manifest.json").unlink()
+        return (
+            cache,
+            fake,
+            (cache / "attempts.jsonl").read_bytes(),
+            beliefs_path.read_bytes(),
         )
 
     def test_prepare_separates_targets_and_fits_regions_from_train_only(self) -> None:
@@ -318,6 +360,192 @@ class BeliefMoveExperimentTests(unittest.TestCase):
         self.assertEqual(manifest["collection_gate"], "ready")
         self.assertEqual(manifest["interface_gate"], "incomplete")
         self.assertEqual(manifest["raw_valid"], 0)
+
+    def test_recover_dangling_appends_deterministic_pilot_fallback_without_llm_call(self) -> None:
+        cache, fake, attempts_before, beliefs_before = self._interrupted_base_pilot()
+        selection_before = (cache / "selection_manifest.json").read_bytes()
+        calls_before = fake.calls
+        with mock.patch(
+            "hybrid.beliefmove.experiment._make_llm",
+            side_effect=AssertionError("recovery must never construct an LLM client"),
+        ):
+            result = recover_dangling(self._recovery_args())
+        self.assertEqual(result["gate"], "ready")
+        self.assertEqual(result["new_recoveries"], 1)
+        self.assertEqual(result["llm_calls"], 0)
+        self.assertEqual(result["request_budget_already_consumed"], 1)
+        self.assertEqual(fake.calls, calls_before)
+        self.assertEqual((cache / "attempts.jsonl").read_bytes(), attempts_before)
+        self.assertEqual((cache / "selection_manifest.json").read_bytes(), selection_before)
+        self.assertTrue((cache / "beliefs.jsonl").read_bytes().startswith(beliefs_before))
+        self.assertFalse((cache / "manifest.json").exists())
+
+        attempts = {
+            row["query_id"]: row
+            for row in map(json.loads, (cache / "attempts.jsonl").read_text().splitlines())
+        }
+        beliefs = {
+            row["query_id"]: row
+            for row in map(json.loads, (cache / "beliefs.jsonl").read_text().splitlines())
+        }
+        recovered_id = result["recovered_query_ids"][0]
+        recovered = beliefs[recovered_id]
+        self.assertEqual(recovered["transport_error"], "")
+        self.assertEqual(
+            recovered["fallback_reason"],
+            "IndeterminateOutcome: collector stopped after durable attempt and before durable belief",
+        )
+        self.assertFalse(recovered["recovery"]["response_available"])
+        self.assertFalse(recovered["recovery"]["usage_known"])
+        self.assertEqual(recovered["recovery"]["request_outcome"], "indeterminate")
+        self.assertTrue(recovered["recovery"]["request_budget_consumed"])
+        self.assertEqual(recovered["physical_request"], 1)
+        self.assertIsNone(recovered["latency_seconds"])
+        self.assertIsNone(recovered["input_tokens"])
+        self.assertIsNone(recovered["output_tokens"])
+        self.assertEqual(
+            recovered["recovery"]["attempt_hash"],
+            hashlib.sha256(
+                json.dumps(
+                    attempts[recovered_id],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+        )
+        belief = StructuredBelief.from_dict(recovered["belief"])
+        self.assertEqual(belief.confidence, 0.0)
+
+        # Recovery is idempotent, and normal collection resumes without a
+        # second physical request for the recovered query.
+        second = recover_dangling(self._recovery_args())
+        self.assertEqual(second["new_recoveries"], 0)
+        resumed = teacher_cache(
+            self._pilot_teacher_args(),
+            llm_factory=lambda *_: (_ for _ in ()).throw(
+                AssertionError("resume must not issue another physical request")
+            ),
+        )
+        self.assertEqual(resumed["new_requests"], 0)
+        manifest = json.loads((cache / "manifest.json").read_text())
+        self.assertEqual(manifest["fallbacks"], 1)
+        self.assertEqual(manifest["transport_errors"], 0)
+
+    def test_recover_dangling_fails_closed_on_attempt_provenance_tamper(self) -> None:
+        cache, _, _, beliefs_before = self._interrupted_base_pilot()
+        attempts_path = cache / "attempts.jsonl"
+        attempts = list(map(json.loads, attempts_path.read_text().splitlines()))
+        attempts[-1]["prompt_hash"] = "0" * 64
+        attempts_path.write_text(
+            "".join(json.dumps(row) + "\n" for row in attempts), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "attempt provenance mismatch.*prompt_hash"):
+            recover_dangling(self._recovery_args())
+        self.assertEqual((cache / "beliefs.jsonl").read_bytes(), beliefs_before)
+
+    def test_recover_dangling_rejects_tampered_recovery_distribution(self) -> None:
+        cache, _, _, _ = self._interrupted_base_pilot()
+        result = recover_dangling(self._recovery_args())
+        recovered_id = result["recovered_query_ids"][0]
+        beliefs_path = cache / "beliefs.jsonl"
+        records = list(map(json.loads, beliefs_path.read_text().splitlines()))
+        recovered = next(row for row in records if row["query_id"] == recovered_id)
+        split = recovered["split"]
+        query = next(
+            row
+            for row in map(
+                json.loads,
+                (self.output / "queries" / f"{split}.jsonl").read_text().splitlines(),
+            )
+            if row["query_id"] == recovered_id
+        )
+        original = StructuredBelief.from_dict(recovered["belief"])
+        recovered["belief"] = StructuredBelief.create(
+            query=json.dumps(
+                query,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            prompt=recovered["prompt"],
+            model_identity=f"Fake:fake:1b@{'d' * 64}",
+            activity={key: 1.0 / len(ACTIVITY_ONTOLOGY) for key in ACTIVITY_ONTOLOGY},
+            intent=original.intent,
+            destination=original.destination,
+            next_region=original.next_region,
+            confidence=0.0,
+        ).to_dict()
+        beliefs_path.write_text(
+            "".join(
+                json.dumps(
+                    row,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+                for row in records
+            ),
+            encoding="utf-8",
+        )
+        tampered = beliefs_path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "exact deterministic fallback"):
+            recover_dangling(self._recovery_args())
+        self.assertEqual(beliefs_path.read_bytes(), tampered)
+
+    def test_recover_dangling_rejects_multiple_dangling_attempts(self) -> None:
+        cache, _, _, _ = self._interrupted_base_pilot()
+        beliefs_path = cache / "beliefs.jsonl"
+        lines = beliefs_path.read_bytes().splitlines(keepends=True)
+        self.assertGreaterEqual(len(lines), 2)
+        beliefs_path.write_bytes(b"".join(lines[:-1]))
+        damaged = beliefs_path.read_bytes()
+
+        with self.assertRaisesRegex(RuntimeError, "multiple dangling attempts"):
+            recover_dangling(self._recovery_args())
+        self.assertEqual(beliefs_path.read_bytes(), damaged)
+
+    def test_recover_dangling_rejects_active_collector_and_nonpilot_cache(self) -> None:
+        cache, _, _, beliefs_before = self._interrupted_base_pilot()
+        lock = (cache / ".collector.lock").open("a+", encoding="utf-8")
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "active collector"):
+                recover_dangling(self._recovery_args())
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            lock.close()
+        self.assertEqual((cache / "beliefs.jsonl").read_bytes(), beliefs_before)
+
+        # A smoke cache cannot be selected for recovery even when interrupted.
+        other_output = self.root / "smoke-only"
+        self.output = other_output
+        prepare(self._unit_args())
+        smoke_args = self._teacher_args("smoke")
+        smoke_args.train_limit = 1
+        smoke_args.validation_limit = 1
+        smoke_result = teacher_cache(smoke_args, llm_factory=lambda *_: FakeLLM())
+        smoke_cache = Path(smoke_result["cache"])
+        smoke_lines = (smoke_cache / "beliefs.jsonl").read_bytes().splitlines(keepends=True)
+        (smoke_cache / "beliefs.jsonl").write_bytes(b"".join(smoke_lines[:-1]))
+        (smoke_cache / "manifest.json").unlink()
+        with self.assertRaisesRegex(RuntimeError, "exactly one matching base cache tagged 'pilot'"):
+            recover_dangling(self._recovery_args())
+
+    def test_recover_dangling_rejects_ambiguous_base_caches(self) -> None:
+        prepare(self._unit_args())
+        for seed in (42, 43):
+            result = teacher_cache(
+                self._pilot_teacher_args(seed=seed), llm_factory=lambda *_: FakeLLM()
+            )
+            cache = Path(result["cache"])
+            lines = (cache / "beliefs.jsonl").read_bytes().splitlines(keepends=True)
+            (cache / "beliefs.jsonl").write_bytes(b"".join(lines[:-1]))
+            (cache / "manifest.json").unlink()
+        with self.assertRaisesRegex(RuntimeError, "observed=2"):
+            recover_dangling(self._recovery_args())
 
     def test_smoke_report_requires_all_three_unambiguous_strict_caches(self) -> None:
         results_root = self.root / "smoke-results"

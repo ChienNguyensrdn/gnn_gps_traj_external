@@ -6,6 +6,7 @@ Không dùng kết quả Phase 2 để thay cho các thành phần dưới đây
 | Yêu cầu trong tài liệu | Hiện thực/contract | Trạng thái |
 |---|---|---|
 | LLM Mobility Teacher sinh activity, intent, destination, next-region, confidence | response contract v2: strict exact-support JSON Schema, một request/query, deterministic L1 normalization tại collector | pilot ready |
+| Collector bị dừng sau durable attempt nhưng trước durable belief | `recover-dangling`: append-only deterministic fallback, không gọi lại LLM; outcome indeterminate và request budget vẫn bị tiêu thụ | recovery ready |
 | Teacher là soft supervision, không phải ground truth | confidence-weighted expected soft counts; fallback có weight 0 | pilot ready |
 | Bayesian knowledge distillation | `DataCPT`, `TeacherSoftCountCPT`, `BlendedCPT`; alpha chỉ chọn validation | primitive + pilot screening ready |
 | Lightweight BN với activity–intent–destination–region | factorization khóa trong `protocol.json` | trainer M1–M5 pending |
@@ -33,6 +34,11 @@ Không dùng kết quả Phase 2 để thay cho các thành phần dưới đây
 - Cache v2 lưu riêng raw relative weights và canonical probabilities, cùng
   response-schema/normalization versions và response-format hash. Cache v1
   không được resume hoặc đổi tên để dùng trong namespace v2.
+- Dangling recovery chỉ hợp lệ khi raw journal chứng minh có đúng một durable
+  attempt nhưng thiếu belief. Attempt không được sửa/xóa; query không được
+  retry. Recovery append fallback confidence 0, tăng fallback rate, giữ
+  transport error là chưa xác định/không xác nhận và vẫn tính physical request
+  vào ngân sách. Đây là provenance repair, không phải cách vượt pilot gate.
 - Test quantitative support bị chặn đến khi `protocol_lock.json` hợp lệ và hash
   của protocol hiện tại khớp lock.
 

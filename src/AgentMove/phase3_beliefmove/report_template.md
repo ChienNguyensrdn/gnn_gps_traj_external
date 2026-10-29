@@ -19,8 +19,8 @@
 
 ## Teacher-cache audit
 
-| Dataset | Unit | Split | Requested | Cached | Valid | Fallback | Physical requests |
-|---|---|---|---:|---:|---:|---:|---:|
+| Dataset | Unit | Split | Requested | Cached | Valid | Fallback | Indeterminate recovery | Confirmed transport error | Physical requests consumed |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
 
 ## M1–M5 quality
 
@@ -54,3 +54,7 @@
   receive this same covariate, while next POI/category/region remain hidden.
 - Any bounded teacher cache must be labelled bounded and cannot be generalized to
   full-query performance.
+- A recovered dangling attempt is an indeterminate request outcome, not a valid
+  LLM response or a confirmed transport error. It consumes one physical-request
+  budget unit, increments fallback accounting and contributes zero teacher
+  soft-count weight.

@@ -35,6 +35,10 @@ Ma trận đối chiếu từng yêu cầu của tài liệu với code/gate n�
   collector mới là biên tin cậy thực hiện chuẩn hóa L1 xác định. Mỗi record
   lưu version/hash của response schema, normalization contract và response
   format để không thể resume nhầm cache v1.
+- Collector có recovery fail-closed cho đúng một trường hợp gián đoạn: request
+  đã được ghi bền vững vào journal nhưng chưa có belief tương ứng. Recovery
+  không gọi LLM, không sửa attempt cũ và chỉ append một fallback xác định với
+  outcome `indeterminate`; request vẫn bị tính là đã tiêu thụ ngân sách.
 - Chưa có: bộ fit/evaluate hoàn chỉnh cho M1–M5, quantitative-teacher
   distillation vào student, test-panel bank, controls và aggregator confirmatory. Vì vậy
   `teacher-offline` và các action confirmatory vẫn bị khóa fail-closed. Không
@@ -42,8 +46,9 @@ Ma trận đối chiếu từng yêu cầu của tài liệu với code/gate n�
 - Chưa có lượt LLM/GPU tốn chi phí nào được chạy trong lần chuẩn bị này.
 
 Vì vậy bước chạy hợp lệ hiện tại dừng ở `prepare`, `smoke`, `pilot`,
-`pilot-report`, `lock` và `status`. `lock` chỉ thành công nếu mọi pilot gate
-đạt; nếu pilot âm tính thì protocol dừng đúng theo stop rule.
+`recover-dangling`, `pilot-report`, `lock` và `status`. `lock` chỉ thành công
+nếu mọi pilot gate đạt; nếu pilot âm tính thì protocol dừng đúng theo stop
+rule.
 
 Pilot chỉ là **region-CPT screening** trên quan hệ `previous_region ->
 next_region`, dùng để quyết định teacher có đủ chất lượng để đầu tư bước sau
@@ -237,7 +242,63 @@ BELIEFMOVE_DATASETS=tist2015 TIST_CITIES=Moscow \
   ./phase3_beliefmove/scripts/run.sh prepare
 ```
 
-Artifact được ghi nguyên tử và bất biến, nên chạy lại cùng unit là an toàn.
+Artifact hoàn chỉnh được ghi nguyên tử và cache đã hoàn tất là bất biến, nên
+chạy lại cùng unit sẽ tái sử dụng kết quả hợp lệ. Teacher journal là append-only;
+trường hợp process dừng giữa durable attempt và durable belief phải dùng quy
+trình recovery riêng ngay dưới đây.
+
+### Phục hồi attempt bị gián đoạn
+
+Nếu collector dừng sau khi đã ghi một physical attempt nhưng trước khi ghi
+belief, chạy lại `pilot` sẽ chủ động dừng với thông báo
+`attempts without beliefs`. Không xóa/sửa `attempts.jsonl`, không sao chép
+belief và không gọi lại query: output của request cũ không còn đủ provenance để
+khôi phục, còn retry có thể tạo physical request thứ hai cho cùng query.
+
+Chỉ trong trường hợp này, dùng recovery tường minh trên đúng dataset/unit bị
+ảnh hưởng:
+
+```bash
+BELIEFMOVE_DATASETS=www2019 \
+OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
+  ./scripts/beliefmove_faithful.sh recover-dangling
+
+# Sau recovery, resume collector/evaluator bình thường.
+BELIEFMOVE_DATASETS="www2019 yjmob100k" \
+OLLAMA_MODEL=qwen2.5:7b \
+OLLAMA_MODEL_DIGEST=<full-sha256> \
+  ./scripts/beliefmove_faithful.sh pilot
+./scripts/beliefmove_faithful.sh pilot-report
+```
+
+Một recovery thành công phải in JSON với `gate=ready`, `llm_calls=0`,
+`request_budget_already_consumed` bằng số dangling mới được materialize và
+`transport_errors_added=0`. `new_recoveries` cho biết số fallback mới append;
+`recovered_total` giữ tổng số recovery đã audit được. Chạy lại đúng lệnh sau
+recovery là idempotent: không gọi LLM và không append record thứ hai.
+
+`recover-dangling` chỉ áp dụng cho base cache `pilot`, không gọi Ollama và
+không sửa journal attempt. Với mỗi ID dangling đã được kiểm chứng, nó append
+một belief fallback xác định, ghi `request_outcome=indeterminate` và metadata
+recovery. Đây **không phải** transport error đã xác nhận: transport-error rate
+không tăng. Ngược lại, physical-request budget được coi là đã tiêu thụ,
+fallback count/rate tăng, confidence của teacher bằng 0 và record không đóng
+góp soft count. Recovery không biến cache thành kết quả dương; các gate chất
+lượng teacher và M2 vẫn được đánh giá nguyên trạng.
+
+Do collector giữ lock và xử lý tuần tự từng query, một lần dừng chỉ có thể để
+lại tối đa **một** attempt chưa có belief. Nếu audit thấy từ hai dangling
+attempt trở lên, `recover-dangling` dừng fail-closed vì đó là dấu hiệu journal
+bị hỏng hoặc bị chỉnh ngoài protocol.
+
+Shell wrapper yêu cầu chọn đúng **một** pilot unit cho mỗi lần recovery và sẽ
+thoát trước khi sửa artifact nếu cấu hình chọn 0 hoặc nhiều hơn 1 unit. Với
+TIST2015 cần đặt cả `BELIEFMOVE_DATASETS=tist2015` và `TIST_CITIES=Tokyo`.
+
+Lệnh này không được dùng cho cache thiếu hoàn toàn, response sai schema, model
+digest sai hoặc manifest xung đột. Nếu không có đúng quan hệ “durable attempt,
+missing belief”, phải dừng và audit thay vì sửa journal thủ công.
 
 Có thể giới hạn khi debug:
 
@@ -265,7 +326,10 @@ hash, teacher model digest, prompt/ontology hash, physical request count và
 hardware. Teacher cache v2 còn phải ghi `prompt_version`,
 `response_schema_version`, `normalization_version`, `prompt_contract_hash` và
 `response_format_hash`; raw response, canonical belief và metadata chuẩn hóa
-được giữ riêng để audit.
+được giữ riêng để audit. Belief được recovery phải giữ riêng provenance của
+attempt ban đầu, outcome `indeterminate`, recovery reason/version và cờ budget
+đã tiêu thụ; report không được gộp nó với output LLM hợp lệ hay transport error
+đã xác nhận.
 
 Mọi cache gọi LLM (`smoke`, `pilot`, repeat và `official`) phải truyền full
 model digest 64-hex lấy từ chính Ollama server đang phục vụ model:

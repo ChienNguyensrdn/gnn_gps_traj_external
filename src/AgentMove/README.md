@@ -251,6 +251,14 @@ OLLAMA_MODEL_DIGEST=<full-sha256> \
 ./scripts/beliefmove_faithful.sh status
 ```
 
+If a pilot process is interrupted after an attempt is durably journalled but
+before its belief is written, do not edit the JSONL files and do not retry the
+LLM query. The explicit `recover-dangling` action appends an auditable
+zero-confidence fallback without a network call, marks the outcome
+indeterminate, counts the request budget as consumed and increments fallback
+accounting. Usage and limitations are documented in
+`phase3_beliefmove/README.md`.
+
 See `phase3_beliefmove/README.md` for the locked M1--M5 definitions, request
 budgets, go/no-go gates and the implementation-status boundary. The
 train/validation-only pilot is implemented; confirmatory actions remain

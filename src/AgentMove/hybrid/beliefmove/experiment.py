@@ -48,6 +48,10 @@ TEACHER_VERSION = "beliefmove.teacher-cache.v2"
 PROMPT_VERSION = "beliefmove.structured-teacher.v2"
 RESPONSE_SCHEMA_VERSION = "beliefmove.teacher-response-schema.v2"
 NORMALIZATION_VERSION = "beliefmove.teacher-l1-weights.v1"
+DANGLING_RECOVERY_VERSION = "beliefmove.dangling-attempt-recovery.v1"
+DANGLING_RECOVERY_REASON = (
+    "IndeterminateOutcome: collector stopped after durable attempt and before durable belief"
+)
 FORBIDDEN_TARGET_KEYS = frozenset(
     {
         "true_id",
@@ -139,6 +143,28 @@ def _append_jsonl(path: Path, payload: Mapping[str, Any]) -> None:
         handle.write(_canonical_json(payload) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _append_jsonl_single_write(path: Path, payload: Mapping[str, Any]) -> None:
+    """Durably append exactly one canonical JSONL record with one OS write.
+
+    Recovery is append-only: replacing or truncating the existing journal
+    would erase evidence about the already-consumed physical request.  The
+    caller must hold the cache collector lock while using this helper.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = (_canonical_json(payload) + "\n").encode("utf-8")
+    descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
+        written = os.write(descriptor, data)
+        if written != len(data):
+            raise OSError(
+                f"short append to {path}: expected={len(data)} observed={written}"
+            )
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -810,6 +836,28 @@ def _teacher_interface_policy(cache_tag: str) -> dict[str, float]:
     }
 
 
+def _teacher_contract(
+    prepare_manifest: Mapping[str, Any],
+    query_source_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the immutable prompt/schema contract shared by collection/recovery."""
+
+    return {
+        "prompt_version": PROMPT_VERSION,
+        "response_schema_version": RESPONSE_SCHEMA_VERSION,
+        "normalization_version": NORMALIZATION_VERSION,
+        "response_format": "json_schema.strict",
+        "temperature": 0.0,
+        "sdk_retries": 0,
+        "schema_hash": SCHEMA_HASH,
+        "activity": ACTIVITY_ONTOLOGY,
+        "intent": INTENT_ONTOLOGY,
+        "destination": DESTINATION_ONTOLOGY,
+        "ontology_hash": prepare_manifest["ontology_hash"],
+        "query_source_contract": dict(query_source_contract),
+    }
+
+
 def teacher_cache(
     args: argparse.Namespace,
     *,
@@ -880,20 +928,7 @@ def teacher_cache(
 
     model_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model).strip("-")
     digest_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model_digest).strip("-")
-    teacher_contract = {
-        "prompt_version": PROMPT_VERSION,
-        "response_schema_version": RESPONSE_SCHEMA_VERSION,
-        "normalization_version": NORMALIZATION_VERSION,
-        "response_format": "json_schema.strict",
-        "temperature": 0.0,
-        "sdk_retries": 0,
-        "schema_hash": SCHEMA_HASH,
-        "activity": ACTIVITY_ONTOLOGY,
-        "intent": INTENT_ONTOLOGY,
-        "destination": DESTINATION_ONTOLOGY,
-        "ontology_hash": prepare_manifest["ontology_hash"],
-        "query_source_contract": query_source_contract,
-    }
+    teacher_contract = _teacher_contract(prepare_manifest, query_source_contract)
     prompt_contract_hash = _canonical_hash(teacher_contract)
     selection_payload = {
         "version": TEACHER_VERSION,
@@ -1015,6 +1050,15 @@ def teacher_cache(
                                 f"immutable teacher belief conflict for query={query_id} field={key}"
                             )
                     StructuredBelief.from_dict(existing["belief"])
+                    if "recovery" in existing:
+                        _validate_recovery_record(
+                            existing,
+                            attempt=existing_attempt,
+                            selection=selection_manifest,
+                            query=query,
+                            prompt=prompt,
+                            model_identity=model_identity,
+                        )
                 except Exception:
                     fcntl.flock(collector_lock.fileno(), fcntl.LOCK_UN)
                     collector_lock.close()
@@ -1156,6 +1200,512 @@ def teacher_cache(
     if getattr(args, "require_gate", False) and manifest["gate"] != "ready":
         raise SystemExit(3)
     return payload
+
+
+def _pilot_base_cache_for_recovery(args: argparse.Namespace) -> Path:
+    """Resolve one and only one interrupted base-pilot cache."""
+
+    output_root = Path(args.output_root)
+    model_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model).strip("-")
+    digest_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model_digest).strip("-")
+    search_root = output_root / "teacher" / model_slug / digest_slug
+    candidates: list[Path] = []
+    if search_root.is_dir():
+        for selection_path in sorted(search_root.rglob("selection_manifest.json")):
+            try:
+                selection = json.loads(selection_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (
+                selection.get("dataset") == args.dataset
+                and selection.get("unit") == args.unit
+                and selection.get("cache_tag") == "pilot"
+                and selection.get("model") == args.model
+                and selection.get("platform") == args.platform
+                and selection.get("model_digest") == args.model_digest
+            ):
+                candidates.append(selection_path.parent)
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "recover-dangling requires exactly one matching base cache tagged 'pilot'; "
+            f"observed={len(candidates)} candidates={[str(path) for path in candidates]}"
+        )
+    return candidates[0]
+
+
+def _recovery_query_rows(
+    args: argparse.Namespace,
+    prepare_manifest: Mapping[str, Any],
+    selection: Mapping[str, Any],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Reconstruct and validate the selected train/validation query contract."""
+
+    output_root = Path(args.output_root)
+    prepare_path = output_root / "manifests" / "prepare_manifest.json"
+    source_contract = selection.get("query_source_contract")
+    if not isinstance(source_contract, Mapping):
+        raise ValueError("pilot selection has no query_source_contract")
+    kind = source_contract.get("kind")
+    supplied_root = getattr(args, "query_root", None)
+    if kind == "prepared-global-support":
+        if supplied_root:
+            raise ValueError(
+                "prepared-global-support recovery must not override --query-root"
+            )
+        query_root = output_root / "queries"
+        if source_contract.get("manifest_hash") != _file_hash(prepare_path):
+            raise ValueError("pilot query-source prepare-manifest hash mismatch")
+        query_manifest: Mapping[str, Any] | None = None
+    elif kind == "quantitative-bound":
+        if not supplied_root:
+            raise ValueError(
+                "quantitative-bound recovery requires the original --query-root"
+            )
+        query_root = Path(supplied_root)
+        query_manifest_path = query_root / "manifest.json"
+        if not query_manifest_path.is_file():
+            raise FileNotFoundError(query_manifest_path)
+        if source_contract.get("manifest_hash") != _file_hash(query_manifest_path):
+            raise ValueError("pilot query-source manifest hash mismatch")
+        query_manifest = json.loads(query_manifest_path.read_text(encoding="utf-8"))
+        required = {
+            "dataset": args.dataset,
+            "unit": args.unit,
+            "dataset_hash": prepare_manifest["dataset_hash"],
+            "ontology_hash": prepare_manifest["ontology_hash"],
+            "target_artifacts_read": False,
+            "allowed_splits": ["train", "validation"],
+        }
+        for key, expected in required.items():
+            if query_manifest.get(key) != expected:
+                raise ValueError(f"pilot query-source manifest mismatch for {key}")
+    else:
+        raise ValueError(f"unsupported pilot query-source kind: {kind!r}")
+
+    requested = selection.get("requested_by_split")
+    available = selection.get("available_by_split")
+    selected_counts = selection.get("selected_by_split")
+    query_ids = selection.get("query_ids")
+    query_hashes = selection.get("query_hashes")
+    if requested != PILOT_BASE_REQUESTED:
+        raise ValueError("recover-dangling only accepts the fixed base-pilot request budget")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (available, selected_counts, query_ids, query_hashes)
+    ):
+        raise ValueError("pilot selection is missing query budget/hash provenance")
+    seed = selection.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("pilot selection seed must be an integer")
+
+    indexed: dict[str, dict[str, dict[str, Any]]] = {}
+    seen: set[str] = set()
+    for split in ("train", "validation"):
+        path = query_root / f"{split}.jsonl"
+        rows = _read_jsonl(path)
+        if any(row.get("split") != split for row in rows):
+            raise ValueError(f"query split provenance mismatch: {path}")
+        if kind == "prepared-global-support":
+            expected_hash = prepare_manifest.get("split_hashes", {}).get(split, {}).get("queries")
+        else:
+            assert query_manifest is not None
+            expected_hash = query_manifest.get("split_hashes", {}).get(split, {}).get(
+                "bound_query_hash"
+            )
+        if expected_hash != _file_hash(path):
+            raise ValueError(f"pilot query artifact hash mismatch for split={split}")
+        if available.get(split) != len(rows):
+            raise ValueError(f"pilot available-query count mismatch for split={split}")
+        selected_rows = _stable_sample(rows, PILOT_BASE_REQUESTED[split], seed)
+        expected_ids = [str(row["query_id"]) for row in selected_rows]
+        declared_ids = query_ids.get(split)
+        if declared_ids != expected_ids:
+            raise ValueError(f"pilot selected query IDs/order mismatch for split={split}")
+        if selected_counts.get(split) != len(selected_rows):
+            raise ValueError(f"pilot selected-query count mismatch for split={split}")
+        if query_hashes.get(split) != _canonical_hash(selected_rows):
+            raise ValueError(f"pilot selected-query hash mismatch for split={split}")
+        split_index = _index_unique(rows, path)
+        if seen & set(split_index):
+            raise ValueError("pilot train/validation query IDs are not disjoint")
+        seen.update(split_index)
+        indexed[split] = split_index
+    return indexed
+
+
+def _expected_teacher_provenance(
+    query: Mapping[str, Any],
+    *,
+    split: str,
+    model_identity: str,
+    prepare_manifest: Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    prompt = build_teacher_prompt(query)
+    response_format = build_teacher_response_format(query["candidate_regions"])
+    return (
+        {
+            "query_id": str(query["query_id"]),
+            "split": split,
+            "source_hash": _canonical_hash(query),
+            "prompt_hash": hash_text(prompt),
+            "response_format_hash": _canonical_hash(response_format),
+            "model_hash": hash_text(model_identity),
+            "dataset_hash": prepare_manifest["dataset_hash"],
+            "ontology_hash": prepare_manifest["ontology_hash"],
+            "physical_request": 1,
+        },
+        prompt,
+    )
+
+
+def _recovery_metadata(
+    attempt: Mapping[str, Any], selection: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        "version": DANGLING_RECOVERY_VERSION,
+        "kind": "indeterminate-outcome-fallback",
+        "reason": DANGLING_RECOVERY_REASON,
+        "request_outcome": "indeterminate",
+        "attempt_hash": _canonical_hash(attempt),
+        "selection_contract_hash": selection["selection_contract_hash"],
+        "request_budget_consumed": True,
+        "response_available": False,
+        "usage_known": False,
+    }
+
+
+def _validate_recovery_record(
+    record: Mapping[str, Any],
+    *,
+    attempt: Mapping[str, Any],
+    selection: Mapping[str, Any],
+    query: Mapping[str, Any],
+    prompt: str,
+    model_identity: str,
+) -> None:
+    expected_recovery = _recovery_metadata(attempt, selection)
+    if record.get("recovery") != expected_recovery:
+        raise ValueError(
+            f"invalid dangling-attempt recovery metadata for query={attempt.get('query_id')}"
+        )
+    expected_normalization = {
+        "version": NORMALIZATION_VERSION,
+        "raw_sums": {},
+        "applied": False,
+        "canonical_probability_error": 0.0,
+    }
+    expected_fields = {
+        "raw_response": "",
+        "raw_response_hash": hash_text(""),
+        "raw_valid": False,
+        "usable_output": False,
+        "fallback": True,
+        "fallback_reason": DANGLING_RECOVERY_REASON,
+        "transport_error": "",
+        "normalization": expected_normalization,
+        "latency_seconds": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "token_source": "unknown-indeterminate-outcome",
+    }
+    for key, expected in expected_fields.items():
+        if record.get(key) != expected:
+            raise ValueError(
+                f"invalid dangling-attempt recovery field for query={attempt.get('query_id')} "
+                f"field={key}"
+            )
+    parsed = _fallback_payload(query["candidate_regions"])
+    expected_belief = StructuredBelief.create(
+        query=_canonical_json(query),
+        prompt=prompt,
+        model_identity=model_identity,
+        activity=parsed["activity"],
+        intent=parsed["intent"],
+        destination=parsed["destination"],
+        next_region=parsed["next_region"],
+        confidence=parsed["confidence"],
+    )
+    belief = StructuredBelief.from_dict(record.get("belief", {}))
+    if belief.to_dict() != expected_belief.to_dict():
+        raise ValueError(
+            f"dangling-attempt fallback belief is not the exact deterministic "
+            f"fallback for query={attempt.get('query_id')}"
+        )
+
+
+def recover_dangling(args: argparse.Namespace) -> dict[str, Any]:
+    """Materialize deterministic fallbacks for consumed requests with no belief.
+
+    The command never constructs an LLM client and never retries a request.
+    It is deliberately restricted to the base ``pilot`` cache, where a small
+    fallback rate is part of the predeclared interface gate.  Smoke and repeat
+    caches require zero fallback and therefore cannot be repaired this way.
+    """
+
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", str(args.model_digest)):
+        raise ValueError("recover-dangling requires a 64-hex SHA-256 --model-digest")
+    output_root = Path(args.output_root)
+    prepare_path = output_root / "manifests" / "prepare_manifest.json"
+    if not prepare_path.is_file():
+        raise FileNotFoundError("run prepare before recover-dangling")
+    prepare_manifest = json.loads(prepare_path.read_text(encoding="utf-8"))
+    if prepare_manifest.get("dataset") != args.dataset or prepare_manifest.get("unit") != args.unit:
+        raise ValueError("prepared manifest dataset/unit mismatch")
+
+    cache_root = _pilot_base_cache_for_recovery(args)
+    lock_handle = (cache_root / ".collector.lock").open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                f"teacher cache already has an active collector: {cache_root}"
+            ) from exc
+
+        selection_path = cache_root / "selection_manifest.json"
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        if selection.get("version") != TEACHER_VERSION:
+            raise ValueError("recover-dangling requires a teacher-cache.v2 selection")
+        required_selection = {
+            "dataset": args.dataset,
+            "unit": args.unit,
+            "cache_tag": "pilot",
+            "model": args.model,
+            "platform": args.platform,
+            "model_digest": args.model_digest,
+            "dataset_hash": prepare_manifest["dataset_hash"],
+            "ontology_hash": prepare_manifest["ontology_hash"],
+            "test_queries_read": False,
+        }
+        for key, expected in required_selection.items():
+            if selection.get(key) != expected:
+                raise ValueError(f"pilot selection mismatch for {key}")
+        selection_hash = selection.get("selection_contract_hash")
+        unhashed_selection = {
+            key: value for key, value in selection.items() if key != "selection_contract_hash"
+        }
+        if selection_hash != _canonical_hash(unhashed_selection):
+            raise ValueError("pilot selection_contract_hash mismatch")
+        prompt_contract_hash = selection.get("prompt_contract_hash")
+        if not isinstance(prompt_contract_hash, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", prompt_contract_hash
+        ):
+            raise ValueError("pilot prompt_contract_hash is invalid")
+        expected_prompt_contract = _canonical_hash(
+            _teacher_contract(prepare_manifest, selection["query_source_contract"])
+        )
+        if prompt_contract_hash != expected_prompt_contract:
+            raise ValueError("pilot prompt contract does not match current immutable contract")
+        expected_cache_name = f"seed-{selection['seed']}-{selection_hash[:16]}"
+        model_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model).strip("-")
+        digest_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.model_digest).strip("-")
+        expected_digest_root = (
+            Path(args.output_root) / "teacher" / model_slug / digest_slug
+        )
+        if (
+            cache_root.name != expected_cache_name
+            or cache_root.parent.name != "pilot"
+            or cache_root.parent.parent.name != prompt_contract_hash
+            or cache_root.parent.parent.parent != expected_digest_root
+        ):
+            raise ValueError("pilot cache path does not match its immutable selection contract")
+
+        indexed_queries = _recovery_query_rows(
+            args, prepare_manifest, selection
+        )
+        expected_by_id: dict[str, tuple[dict[str, Any], str, Mapping[str, Any]]] = {}
+        model_identity = f"{args.platform}:{args.model}@{args.model_digest}"
+        for split in ("train", "validation"):
+            for query_id in selection["query_ids"][split]:
+                query = indexed_queries[split][str(query_id)]
+                expected, prompt = _expected_teacher_provenance(
+                    query,
+                    split=split,
+                    model_identity=model_identity,
+                    prepare_manifest=prepare_manifest,
+                )
+                expected_by_id[str(query_id)] = (expected, prompt, query)
+
+        attempts, beliefs = _load_teacher_cache(cache_root)
+        selected_ids = set(expected_by_id)
+        unexpected_attempts = sorted(set(attempts) - selected_ids)
+        unexpected_beliefs = sorted(set(beliefs) - selected_ids)
+        orphan_beliefs = sorted(set(beliefs) - set(attempts))
+        if unexpected_attempts or unexpected_beliefs or orphan_beliefs:
+            raise RuntimeError(
+                "pilot journals violate the immutable selection; "
+                f"unexpected_attempts={unexpected_attempts[:5]} "
+                f"unexpected_beliefs={unexpected_beliefs[:5]} "
+                f"orphan_beliefs={orphan_beliefs[:5]}"
+            )
+
+        for query_id, attempt in attempts.items():
+            expected, _, _ = expected_by_id[query_id]
+            for key, expected_value in expected.items():
+                if attempt.get(key) != expected_value:
+                    raise ValueError(
+                        f"pilot attempt provenance mismatch for query={query_id} field={key}"
+                    )
+        recovered_before = 0
+        for query_id, record in beliefs.items():
+            expected, prompt, query = expected_by_id[query_id]
+            attempt = attempts[query_id]
+            for key, expected_value in expected.items():
+                if record.get(key) != expected_value:
+                    raise ValueError(
+                        f"pilot belief provenance mismatch for query={query_id} field={key}"
+                    )
+            if record.get("prompt") != prompt or record.get("prompt_hash") != hash_text(prompt):
+                raise ValueError(f"pilot belief prompt mismatch for query={query_id}")
+            belief = StructuredBelief.from_dict(record.get("belief", {}))
+            if (
+                belief.query_hash != _canonical_hash(query)
+                or belief.prompt_hash != expected["prompt_hash"]
+                or belief.model_hash != expected["model_hash"]
+                or set(belief.activity) != set(ACTIVITY_ONTOLOGY)
+                or set(belief.intent) != set(INTENT_ONTOLOGY)
+                or set(belief.destination) != set(DESTINATION_ONTOLOGY)
+                or set(belief.next_region) != set(query["candidate_regions"])
+            ):
+                raise ValueError(f"pilot structured belief mismatch for query={query_id}")
+            raw_response = record.get("raw_response")
+            normalization = record.get("normalization")
+            probability_error = (
+                normalization.get("canonical_probability_error")
+                if isinstance(normalization, Mapping)
+                else None
+            )
+            raw_valid = record.get("raw_valid")
+            usable = record.get("usable_output")
+            fallback = record.get("fallback")
+            transport_error = record.get("transport_error")
+            if (
+                record.get("schema_hash") != SCHEMA_HASH
+                or not isinstance(raw_response, str)
+                or record.get("raw_response_hash") != hash_text(raw_response)
+                or type(raw_valid) is not bool
+                or type(usable) is not bool
+                or type(fallback) is not bool
+                or usable is not raw_valid
+                or fallback is usable
+                or not isinstance(transport_error, str)
+                or (usable and bool(transport_error))
+                or not isinstance(record.get("fallback_reason"), str)
+                or not isinstance(normalization, Mapping)
+                or normalization.get("version") != NORMALIZATION_VERSION
+                or isinstance(probability_error, bool)
+                or not isinstance(probability_error, (int, float))
+                or not math.isfinite(float(probability_error))
+                or not 0.0 <= float(probability_error) <= 1e-6
+            ):
+                raise ValueError(f"pilot belief interface provenance mismatch for query={query_id}")
+            if "recovery" in record:
+                _validate_recovery_record(
+                    record,
+                    attempt=attempt,
+                    selection=selection,
+                    query=query,
+                    prompt=prompt,
+                    model_identity=model_identity,
+                )
+                recovered_before += 1
+
+        dangling = sorted(set(attempts) - set(beliefs))
+        if len(dangling) > 1:
+            raise RuntimeError(
+                "base pilot cache has multiple dangling attempts; a sequential locked "
+                f"collector can leave at most one, observed={len(dangling)} "
+                f"query_ids={dangling[:5]}"
+            )
+        if dangling and (cache_root / "manifest.json").exists():
+            raise RuntimeError(
+                "pilot has dangling attempts but already has an immutable manifest; "
+                "refusing to create a conflicting derived state"
+            )
+        if not dangling and recovered_before == 0:
+            raise RuntimeError("pilot cache has no dangling attempts to recover")
+
+        beliefs_path = cache_root / "beliefs.jsonl"
+        original_size = beliefs_path.stat().st_size if beliefs_path.exists() else 0
+        for query_id in dangling:
+            expected, prompt, query = expected_by_id[query_id]
+            attempt = attempts[query_id]
+            parsed = _fallback_payload(query["candidate_regions"])
+            belief = StructuredBelief.create(
+                query=_canonical_json(query),
+                prompt=prompt,
+                model_identity=model_identity,
+                activity=parsed["activity"],
+                intent=parsed["intent"],
+                destination=parsed["destination"],
+                next_region=parsed["next_region"],
+                confidence=parsed["confidence"],
+            )
+            record = {
+                **expected,
+                "schema_hash": SCHEMA_HASH,
+                "prompt": prompt,
+                "raw_response": "",
+                "raw_response_hash": hash_text(""),
+                "raw_valid": False,
+                "usable_output": False,
+                "fallback": True,
+                "fallback_reason": DANGLING_RECOVERY_REASON,
+                # The collector outcome is unknown, not a confirmed transport error.
+                "transport_error": "",
+                "normalization": {
+                    "version": NORMALIZATION_VERSION,
+                    "raw_sums": {},
+                    "applied": False,
+                    "canonical_probability_error": 0.0,
+                },
+                "latency_seconds": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "token_source": "unknown-indeterminate-outcome",
+                "recovery": _recovery_metadata(attempt, selection),
+                "belief": belief.to_dict(),
+            }
+            _append_jsonl_single_write(beliefs_path, record)
+            beliefs[query_id] = record
+
+        # Re-read the append-only journal before declaring recovery complete.
+        _, verified_beliefs = _load_teacher_cache(cache_root)
+        if set(attempts) - set(verified_beliefs):
+            raise RuntimeError("dangling-attempt recovery did not durably materialize every fallback")
+        for query_id in dangling:
+            _, prompt, query = expected_by_id[query_id]
+            _validate_recovery_record(
+                verified_beliefs[query_id],
+                attempt=attempts[query_id],
+                selection=selection,
+                query=query,
+                prompt=prompt,
+                model_identity=model_identity,
+            )
+        payload = {
+            "action": "recover-dangling",
+            "dataset": args.dataset,
+            "unit": args.unit,
+            "gate": "ready",
+            "cache": str(cache_root),
+            "dangling_found": len(dangling),
+            "new_recoveries": len(dangling),
+            "recovered_total": recovered_before + len(dangling),
+            "recovered_query_ids": dangling,
+            "llm_calls": 0,
+            "request_budget_already_consumed": len(dangling),
+            "belief_journal_original_bytes": original_size,
+            "belief_journal_final_bytes": beliefs_path.stat().st_size,
+            "transport_errors_added": 0,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return payload
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
 
 
 def _teacher_cache_status(cache_root: Path) -> dict[str, Any]:
@@ -1954,6 +2504,12 @@ def build_parser() -> argparse.ArgumentParser:
     teacher_parser.add_argument("--query-root")
     teacher_parser.add_argument("--require-gate", action="store_true")
     teacher_parser.set_defaults(handler=teacher_cache)
+    recovery_parser = unit_parser("recover-dangling")
+    recovery_parser.add_argument("--model", required=True)
+    recovery_parser.add_argument("--platform", default="Ollama")
+    recovery_parser.add_argument("--model-digest", required=True)
+    recovery_parser.add_argument("--query-root")
+    recovery_parser.set_defaults(handler=recover_dangling)
     pilot_parser = unit_parser("pilot-evaluate")
     pilot_parser.add_argument("--model", required=True)
     pilot_parser.add_argument("--model-digest", required=True)
